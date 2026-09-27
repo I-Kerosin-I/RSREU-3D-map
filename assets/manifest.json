@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "coordinateSystem": {
+    "units": "meters",
+    "upAxis": "Y"
+  },
+  "buildings": [
+    {
+      "id": "main",
+      "name": "Главный корпус",
+      "model": "models/test.glb",
+      "floors": [
+        {
+          "id": "1",
+          "level": 1,
+          "heightMeters": 0.0,
+          "spaces": [
+            {
+              "id": "room_test",
+              "name": "Тестовая комната",
+              "type": "ROOM",
+              "modelNode": "Box",
+              "bounds": {
+                "min": [-0.5, 0.0, -0.5],
+                "max": [0.5, 1.0, 0.5]
+              }
+            }
+          ]
+        }
+      ],
+      "navigation": {
+        "nodes": [
+          {
+            "id": "nav_1_01",
+            "floor": "1",
+            "position": [0.0, 0.5, 0.0]
+          },
+          {
+            "id": "nav_1_02",
+            "floor": "1",
+            "position": [2.0, 0.5, 0.0]
+          }
+        ],
+        "edges": [
+          {
+            "from": "nav_1_01",
+            "to": "nav_1_02",
+            "type": "CORRIDOR",
+            "bidirectional": true
+          }
+        ]
+      }
+    }
+  ]
+}
