@@ -138,7 +138,6 @@ public class CameraInputController extends InputAdapter {
         if (keyD) movement.add(right);
         if (keyA) {
             movement.sub(right);
-            System.out.println(camera.position);
         }
 
         if (movement.len() > 0) {

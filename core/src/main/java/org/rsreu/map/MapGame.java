@@ -6,32 +6,25 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
-import com.badlogic.gdx.graphics.g3d.Environment;
-import com.badlogic.gdx.graphics.g3d.Material;
-import com.badlogic.gdx.graphics.g3d.Model;
-import com.badlogic.gdx.graphics.g3d.ModelBatch;
-import com.badlogic.gdx.graphics.g3d.ModelInstance;
-import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
-import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.utils.Array;
 import net.mgsx.gltf.scene3d.scene.Scene;
+import net.mgsx.gltf.scene3d.scene.SceneManager;
 import org.rsreu.map.input.CameraInputController;
 import org.rsreu.map.render.SceneLoader;
 
-
 /**
  * Main libGDX application for RSREU 3D Map.
+ * 
+ * Uses SceneManager from gdx-gltf for native PBR rendering.
  */
 public class MapGame extends ApplicationAdapter {
 
     private PerspectiveCamera camera;
     private CameraInputController cameraController;
-    private ModelBatch modelBatch;
-    private Environment environment;
+    private SceneManager sceneManager;
 
     private SceneLoader sceneLoader;
     private Array<Scene> loadedScenes;
-    private Array<ModelInstance> modelInstances; // For test boxes
 
     @Override
     public void create() {
@@ -49,18 +42,18 @@ public class MapGame extends ApplicationAdapter {
         cameraController.setCamera(camera);
         Gdx.input.setInputProcessor(cameraController);
 
-        // Set up model batch and environment
-        modelBatch = new ModelBatch();
-        environment = new Environment();
-        environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.6f, 0.6f, 0.6f, 1f));
-        environment.add(new com.badlogic.gdx.graphics.g3d.environment.DirectionalLight()
+        // Set up SceneManager with PBR rendering
+        sceneManager = new SceneManager();
+        sceneManager.setCamera(camera);
+        
+        // Set ambient light
+        sceneManager.setAmbientLight(0.8f);
+        
+        // Add directional light
+        sceneManager.environment.add(new com.badlogic.gdx.graphics.g3d.environment.DirectionalLight()
             .set(Color.WHITE, -1f, -1f, -1f));
 
         loadedScenes = new Array<>();
-        modelInstances = new Array<>();
-
-        // Create a simple test box using ModelBuilder
-        createTestBox();
 
         // Initialize scene loader
         sceneLoader = new SceneLoader();
@@ -71,30 +64,16 @@ public class MapGame extends ApplicationAdapter {
         Gdx.app.log("MapGame", "Application created successfully");
     }
 
-    private void createTestBox() {
-        try {
-            ModelBuilder modelBuilder = new ModelBuilder();
-            Material mat = new Material(ColorAttribute.createDiffuse(Color.RED));
-            Model boxModel = modelBuilder.createBox(2f, 2f, 2f, mat,
-                com.badlogic.gdx.graphics.VertexAttributes.Usage.Normal |
-                com.badlogic.gdx.graphics.VertexAttributes.Usage.Position);
-            ModelInstance boxInstance = new ModelInstance(boxModel);
-            boxInstance.transform.setToTranslation(-4, 0, 0); // Offset to the left
-            modelInstances.add(boxInstance);
-            Gdx.app.log("MapGame", "Created test box at offset (-4, 0, 0)");
-        } catch (Exception e) {
-            Gdx.app.log("MapGame", "Failed to create test box: " + e.getMessage());
-        }
-    }
-
     private void loadTestModel() {
         try {
             String modelPath = "models/test.glb";
             Scene scene = sceneLoader.loadScene(modelPath);
 
             if (scene != null) {
+                // Add scene to SceneManager (appends scene's lights to environment automatically)
+                sceneManager.addScene(scene, true);
                 loadedScenes.add(scene);
-                Gdx.app.log("MapGame", "Successfully loaded test model: " + modelPath);
+                Gdx.app.log("MapGame", "Successfully loaded and added scene: " + modelPath);
 
                 // Debug: print model info
                 if (scene.modelInstance != null) {
@@ -128,28 +107,12 @@ public class MapGame extends ApplicationAdapter {
 
         // Update camera
         camera.update();
-
-        modelBatch.begin(camera);
-
-        // Render test box (should appear red, offset to the left)
-        for (ModelInstance instance : modelInstances) {
-            try {
-                modelBatch.render(instance, environment);
-            } catch (Exception e) {
-                Gdx.app.log("MapGame", "Error rendering test box: " + e.getMessage());
-            }
-        }
-
-        // Render all loaded scenes
-        for (Scene scene : loadedScenes) {
-            try {
-                modelBatch.render(scene, environment);
-            } catch (Exception e) {
-                Gdx.app.log("MapGame", "Error rendering scene: " + e.getMessage());
-            }
-        }
-
-        modelBatch.end();
+        
+        // Update SceneManager (animations, lights, etc.)
+        sceneManager.update(Gdx.graphics.getDeltaTime());
+        
+        // Render everything (shadows, reflections, colors)
+        sceneManager.render();
     }
 
     @Override
@@ -159,12 +122,15 @@ public class MapGame extends ApplicationAdapter {
             camera.viewportHeight = height;
             camera.update();
         }
+        if (sceneManager != null) {
+            sceneManager.updateViewport(width, height);
+        }
     }
 
     @Override
     public void dispose() {
-        if (modelBatch != null) {
-            modelBatch.dispose();
+        if (sceneManager != null) {
+            sceneManager.dispose();
         }
         if (sceneLoader != null) {
             sceneLoader.dispose();
