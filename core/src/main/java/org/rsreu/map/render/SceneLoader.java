@@ -3,62 +3,98 @@ package org.rsreu.map.render;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
-import com.badlogic.gdx.graphics.g3d.loader.ObjLoader;
+import com.badlogic.gdx.utils.Disposable;
+import net.mgsx.gltf.loaders.glb.GLBLoader;
+import net.mgsx.gltf.scene3d.scene.Scene;
+import net.mgsx.gltf.scene3d.scene.SceneAsset;
 
 /**
- * Loads OBJ models for the scene.
- * GLB/GLTF loading requires additional dependencies.
- * For production, consider using gdx-gltf library or converting models to OBJ.
+ * Loads GLB/GLTF models using gdx-gltf library (net.mgsx.gltf).
+ * Supports both GLB binary and GLTF text formats.
+ * <p>
+ * The loaded Scene can be used directly as a RenderableProvider with ModelBatch,
+ * or the underlying Model can be extracted and used as a ModelInstance.
  */
-public class SceneLoader {
+public class SceneLoader implements Disposable {
 
-    private ObjLoader objLoader;
+    private GLBLoader glbLoader;
 
     public SceneLoader() {
-        this.objLoader = new ObjLoader();
+        this.glbLoader = new GLBLoader();
     }
 
     /**
-     * Loads a scene from the given path.
-     * Currently supports OBJ format. GLB requires additional setup.
+     * Loads a GLB/GLTF scene from the given path.
+     * Returns a Scene which implements RenderableProvider.
      *
-     * @param path path to the model file (relative to assets)
-     * @return ModelInstance for rendering, or null if loading fails
+     * @param path path to the model file (relative to assets, e.g. "models/test.glb")
+     * @return Scene for rendering, or null if loading fails
      */
-    public ModelInstance loadScene(String path) {
+    public Scene loadScene(String path) {
         try {
             if (path == null || path.isBlank()) {
                 Gdx.app.log("SceneLoader", "Path is null or blank");
                 return null;
             }
 
-            // Try to load as OBJ first
             String fullPath = "assets/" + path;
             Gdx.app.log("SceneLoader", "Loading scene from: " + fullPath);
 
-            // Remove .glb/.gltf extension and try .obj
-            String objPath = fullPath.replaceAll("\\.glb$", ".obj").replaceAll("\\.gltf$", ".obj");
-            Gdx.app.log("SceneLoader", "Trying to load: " + objPath);
-
-            Model model = objLoader.loadModel(Gdx.files.internal(objPath), true);
-            if (model != null) {
-                ModelInstance instance = new ModelInstance(model);
-                Gdx.app.log("SceneLoader", "Successfully loaded scene: " + objPath);
-                return instance;
-            } else {
-                Gdx.app.log("SceneLoader", "Model is null for: " + objPath);
+            SceneAsset asset = glbLoader.load(Gdx.files.internal(fullPath));
+            if (asset == null) {
+                Gdx.app.log("SceneLoader", "Failed to load scene (asset is null): " + path);
                 return null;
             }
+
+            if (asset.scene == null) {
+                Gdx.app.log("SceneLoader", "Failed to load scene (scene is null): " + path);
+                return null;
+            }
+
+            // SceneModel is not Scene - construct Scene from SceneModel
+            Scene scene = new Scene(asset.scene);
+
+            Gdx.app.log("SceneLoader", "Successfully loaded scene: " + path);
+            return scene;
         } catch (Exception e) {
-            Gdx.app.log("SceneLoader", "Could not load model: " + e.getMessage());
+            Gdx.app.error("SceneLoader", "Failed to load scene from " + path + ": " + e.getMessage());
+            e.printStackTrace();
             return null;
         }
     }
 
     /**
-     * Disposes of resources.
+     * Loads a scene and returns it as a ModelInstance for use with ModelBatch.
+     *
+     * @param path path to the model file (relative to assets)
+     * @return ModelInstance for rendering, or null if loading fails
      */
+    public ModelInstance loadSceneAsModelInstance(String path) {
+        Scene scene = loadScene(path);
+        if (scene != null && scene.modelInstance != null) {
+            return scene.modelInstance;
+        }
+        return null;
+    }
+
+    /**
+     * Returns the raw libGDX Model from a loaded scene.
+     *
+     * @param path path to the model file (relative to assets)
+     * @return Model, or null if loading fails
+     */
+    public Model loadModel(String path) {
+        Scene scene = loadScene(path);
+        if (scene != null && scene.modelInstance != null) {
+            return scene.modelInstance.model;
+        }
+        return null;
+    }
+
+    @Override
     public void dispose() {
-        // No dispose method on ObjLoader
+        if (glbLoader != null) {
+            glbLoader = null;
+        }
     }
 }

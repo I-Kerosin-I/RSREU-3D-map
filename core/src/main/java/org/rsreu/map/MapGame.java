@@ -14,8 +14,10 @@ import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.utils.Array;
+import net.mgsx.gltf.scene3d.scene.Scene;
 import org.rsreu.map.input.CameraInputController;
 import org.rsreu.map.render.SceneLoader;
+
 
 /**
  * Main libGDX application for RSREU 3D Map.
@@ -26,12 +28,10 @@ public class MapGame extends ApplicationAdapter {
     private CameraInputController cameraController;
     private ModelBatch modelBatch;
     private Environment environment;
-    private ModelBuilder modelBuilder;
 
     private SceneLoader sceneLoader;
-
-    private Array<ModelInstance> modelInstances;
-    private ModelInstance axesInstance;
+    private Array<Scene> loadedScenes;
+    private Array<ModelInstance> modelInstances; // For test boxes
 
     @Override
     public void create() {
@@ -39,7 +39,7 @@ public class MapGame extends ApplicationAdapter {
 
         // Set up camera
         camera = new PerspectiveCamera(60f, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        camera.position.set(0f, 5f, 10f);
+        camera.position.set(5f, 5f, 5f);
         camera.lookAt(0f, 0f, 0f);
         camera.near = 0.1f;
         camera.far = 1000f;
@@ -52,54 +52,66 @@ public class MapGame extends ApplicationAdapter {
         // Set up model batch and environment
         modelBatch = new ModelBatch();
         environment = new Environment();
-        environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.4f, 0.4f, 0.4f, 1f));
+        environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.6f, 0.6f, 0.6f, 1f));
         environment.add(new com.badlogic.gdx.graphics.g3d.environment.DirectionalLight()
             .set(Color.WHITE, -1f, -1f, -1f));
 
-        modelBuilder = new ModelBuilder();
+        loadedScenes = new Array<>();
         modelInstances = new Array<>();
 
-        // Create coordinate axes for reference
-        createCoordinateAxes();
+        // Create a simple test box using ModelBuilder
+        createTestBox();
 
         // Initialize scene loader
         sceneLoader = new SceneLoader();
 
-        // Try to load the test GLB model
+        // Load the test GLB model
         loadTestModel();
 
         Gdx.app.log("MapGame", "Application created successfully");
     }
 
-    private void createCoordinateAxes() {
-        // Create coordinate axes manually using Box model scaled to show axes
-        // For simplicity, skip axes if API doesn't match
-        Gdx.app.log("MapGame", "Coordinate axes skipped - using simple scene");
+    private void createTestBox() {
+        try {
+            ModelBuilder modelBuilder = new ModelBuilder();
+            Material mat = new Material(ColorAttribute.createDiffuse(Color.RED));
+            Model boxModel = modelBuilder.createBox(2f, 2f, 2f, mat,
+                com.badlogic.gdx.graphics.VertexAttributes.Usage.Normal |
+                com.badlogic.gdx.graphics.VertexAttributes.Usage.Position);
+            ModelInstance boxInstance = new ModelInstance(boxModel);
+            boxInstance.transform.setToTranslation(-4, 0, 0); // Offset to the left
+            modelInstances.add(boxInstance);
+            Gdx.app.log("MapGame", "Created test box at offset (-4, 0, 0)");
+        } catch (Exception e) {
+            Gdx.app.log("MapGame", "Failed to create test box: " + e.getMessage());
+        }
     }
 
     private void loadTestModel() {
         try {
-            // Try to load test.glb from assets
             String modelPath = "models/test.glb";
-            ModelInstance instance = sceneLoader.loadScene(modelPath);
+            Scene scene = sceneLoader.loadScene(modelPath);
 
-            if (instance != null) {
-                modelInstances.add(instance);
+            if (scene != null) {
+                loadedScenes.add(scene);
                 Gdx.app.log("MapGame", "Successfully loaded test model: " + modelPath);
 
-                // Center the model at origin
-                centerModel(instance);
+                // Debug: print model info
+                if (scene.modelInstance != null) {
+                    Gdx.app.log("MapGame", "  Transform: " + scene.modelInstance.transform);
+                    if (scene.modelInstance.model != null) {
+                        Gdx.app.log("MapGame", "  Meshes: " + scene.modelInstance.model.meshParts.size);
+                        Gdx.app.log("MapGame", "  Materials: " + scene.modelInstance.model.materials.size);
+                    }
+                } else {
+                    Gdx.app.log("MapGame", "  Warning: modelInstance is null!");
+                }
             } else {
-                Gdx.app.log("MapGame", "Warning: Could not load test model, instance is null");
+                Gdx.app.log("MapGame", "Warning: Could not load test model, scene is null");
             }
         } catch (Exception e) {
             Gdx.app.log("MapGame", "Could not load test.glb: " + e.getMessage());
-        }
-    }
-
-    private void centerModel(ModelInstance instance) {
-        if (instance != null && instance.transform != null) {
-            instance.transform.idt();
+            e.printStackTrace();
         }
     }
 
@@ -110,25 +122,34 @@ public class MapGame extends ApplicationAdapter {
 
         // Clear screen
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        Gdx.gl.glClearColor(0.2f, 0.2f, 0.3f, 1f);
+        Gdx.gl.glClearColor(0.25f, 0.25f, 0.35f, 1f);
         Gdx.gl.glClear(com.badlogic.gdx.graphics.GL20.GL_COLOR_BUFFER_BIT | com.badlogic.gdx.graphics.GL20.GL_DEPTH_BUFFER_BIT);
+        Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
 
         // Update camera
         camera.update();
 
-        // Render coordinate axes
-        if (axesInstance != null) {
-            modelBatch.render(axesInstance, environment);
-        }
+        modelBatch.begin(camera);
 
-        // Render all loaded model instances
+        // Render test box (should appear red, offset to the left)
         for (ModelInstance instance : modelInstances) {
             try {
                 modelBatch.render(instance, environment);
             } catch (Exception e) {
-                Gdx.app.log("MapGame", "Error rendering model: " + e.getMessage());
+                Gdx.app.log("MapGame", "Error rendering test box: " + e.getMessage());
             }
         }
+
+        // Render all loaded scenes
+        for (Scene scene : loadedScenes) {
+            try {
+                modelBatch.render(scene, environment);
+            } catch (Exception e) {
+                Gdx.app.log("MapGame", "Error rendering scene: " + e.getMessage());
+            }
+        }
+
+        modelBatch.end();
     }
 
     @Override

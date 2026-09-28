@@ -66,8 +66,8 @@ public class CameraInputController extends InputAdapter {
             float theta = (float) Math.atan2(position.x, position.z);
             float phi = (float) Math.acos(position.y / distance);
 
-            theta -= Math.toRadians(angleX * 0.5f);
-            phi -= Math.toRadians(angleY * 0.5f);
+            theta = (float) (theta - Math.toRadians(angleX * 0.5f));
+            phi = (float) (phi - Math.toRadians(angleY * 0.5f));
 
             // Clamp phi to avoid gimbal lock
             phi = Math.max(0.1f, Math.min((float) Math.PI - 0.1f, phi));
@@ -136,7 +136,10 @@ public class CameraInputController extends InputAdapter {
         if (keyW) movement.add(forward);
         if (keyS) movement.sub(forward);
         if (keyD) movement.add(right);
-        if (keyA) movement.sub(right);
+        if (keyA) {
+            movement.sub(right);
+            System.out.println(camera.position);
+        }
 
         if (movement.len() > 0) {
             movement.nor().scl(moveDistance);
