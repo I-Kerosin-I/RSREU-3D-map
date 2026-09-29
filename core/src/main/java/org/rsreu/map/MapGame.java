@@ -14,7 +14,7 @@ import org.rsreu.map.render.SceneLoader;
 
 /**
  * Main libGDX application for RSREU 3D Map.
- * 
+ * <p>
  * Uses SceneManager from gdx-gltf for native PBR rendering.
  */
 public class MapGame extends ApplicationAdapter {
@@ -32,7 +32,7 @@ public class MapGame extends ApplicationAdapter {
 
         // Set up camera
         camera = new PerspectiveCamera(60f, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        camera.position.set(5f, 5f, 5f);
+        camera.position.set(5f, 0f, 0f);
         camera.lookAt(0f, 0f, 0f);
         camera.near = 0.1f;
         camera.far = 1000f;

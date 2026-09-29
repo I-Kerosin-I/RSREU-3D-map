@@ -18,6 +18,10 @@ Interactive 3D navigation map of RSREU buildings.
 - Rendering must not contain university domain logic.
 - University data must not depend on libGDX classes.
 
+## Build
+- Use Maven to build the project.
+- Use `cd "D:\Projects\RSREU 3D Map"; mvn compile -q 2>&1 | Select-String -Pattern "ERROR|BUILD|SUCCESS"` to compile the project by default.
+
 ## 3D assets
 
 - Final runtime format: glTF 2.0 / GLB.
