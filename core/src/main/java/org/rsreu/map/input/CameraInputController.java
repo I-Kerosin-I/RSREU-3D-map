@@ -13,7 +13,8 @@ import com.badlogic.gdx.math.collision.Ray;
  *
  * <p>Left mouse button pans the camera and the orbit pivot inside the horizontal
  * (XZ) plane. Right mouse button orbits the camera around the pivot point that
- * sits {@link #ORBIT_DISTANCE} units in front of the camera.
+ * sits {@link #orbitDistance} units in front of the camera. The mouse wheel moves
+ * the camera closer to or further from that pivot.
  *
  * <p>The camera orientation is kept as a single quaternion. Every orbit step
  * composes exactly two rotations: a yaw around the world up vector and a pitch
@@ -26,11 +27,15 @@ public class CameraInputController extends InputAdapter {
     private static final float ROTATION_SPEED = 0.3f;  // degrees per pixel
     private static final float PAN_SPEED = 0.001f;      // fraction of orbit distance per pixel
     private static final float KEY_MOVE_SPEED = 5f;    // units per second
+    private static final float ZOOM_STEP = 1.1f;       // orbit distance multiplier per scroll notch
     private static final float MIN_PITCH = -85f;
     private static final float MAX_PITCH = 85f;
 
+    private static final float MIN_ORBIT_DISTANCE = 1f;
+    private static final float MAX_ORBIT_DISTANCE = 500f;
+
     /** Distance from the camera to the orbit pivot, in world units. */
-    private static final float ORBIT_DISTANCE = 10f;
+    private float orbitDistance = 10f;
 
     private static final Vector3 LOCAL_FORWARD = new Vector3(0f, 0f, -1f);
     private static final Vector3 LOCAL_UP = new Vector3(0f, 1f, 0f);
@@ -139,6 +144,37 @@ public class CameraInputController extends InputAdapter {
     }
 
     /**
+     * Zooms with the mouse wheel. The pivot stays where it is, the camera moves
+     * towards or away from it along the view ray.
+     */
+    @Override
+    public boolean scrolled(float amountX, float amountY) {
+        if (camera == null || amountY == 0f) {
+            return false;
+        }
+        zoom(amountY);
+        return true;
+    }
+
+    /**
+     * Changes the orbit distance while keeping the pivot in front of the camera.
+     *
+     * @param amount positive values zoom in, negative values zoom out
+     */
+    private void zoom(float amount) {
+        // The pivot does not move, so it is recomputed from the current orbit
+        // distance before that distance is changed.
+        updatePivot();
+
+        orbitDistance = clamp(orbitDistance * (float) Math.pow(ZOOM_STEP, amount),
+            MIN_ORBIT_DISTANCE, MAX_ORBIT_DISTANCE);
+
+        tmpDirection.set(camera.direction).nor();
+        camera.position.set(pivot).mulAdd(tmpDirection, -orbitDistance);
+        camera.update();
+    }
+
+    /**
      * Orbits the camera around the pivot point. The camera position is rotated
      * around the pivot, and the orientation is rotated by the very same amount.
      */
@@ -176,7 +212,7 @@ public class CameraInputController extends InputAdapter {
         horizontalForward(tmpDirection);
         tmpRight.set(tmpDirection).crs(Vector3.Y).nor();
 
-        float scale = ORBIT_DISTANCE * PAN_SPEED;
+        float scale = orbitDistance * PAN_SPEED;
         tmpMove.setZero()
             .mulAdd(tmpRight, -deltaX * scale)
             .mulAdd(tmpDirection, deltaY * scale);
@@ -192,7 +228,7 @@ public class CameraInputController extends InputAdapter {
      */
     private void updatePivot() {
         tmpDirection.set(camera.direction).nor();
-        pivot.set(camera.position).mulAdd(tmpDirection, ORBIT_DISTANCE);
+        pivot.set(camera.position).mulAdd(tmpDirection, orbitDistance);
     }
 
     /** Writes the orientation quaternion into the camera direction and up vectors. */
