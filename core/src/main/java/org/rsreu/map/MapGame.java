@@ -2,17 +2,18 @@ package org.rsreu.map;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
-import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.BufferUtils;
 import net.mgsx.gltf.scene3d.scene.Scene;
 import net.mgsx.gltf.scene3d.scene.SceneManager;
 import org.rsreu.map.input.CameraInputController;
 import org.rsreu.map.render.EdgeHighlighter;
 import org.rsreu.map.render.SceneLoader;
+
+import java.nio.IntBuffer;
 
 /**
  * Main libGDX application for RSREU 3D Map.
@@ -40,20 +41,6 @@ public class MapGame extends ApplicationAdapter {
      */
     private static final float POLYGON_OFFSET_FACTOR = 1f;
     private static final float POLYGON_OFFSET_UNITS = 2f;
-
-    /**
-     * Multisample count of the back buffer. libGDX defaults to 0, which means no
-     * anti-aliasing at all: straight lines, jagged silhouettes and a crawling
-     * 1 pixel edge wireframe.
-     */
-    private static final int SAMPLES = 0;
-
-    /**
-     * libGDX defaults to a 16 bit depth buffer, which is far too coarse for the
-     * near and far planes of a 3D scene and makes surfaces shimmer while the
-     * camera moves.
-     */
-    private static final int DEPTH_BITS = 24;
 
     private PerspectiveCamera camera;
     private CameraInputController cameraController;
@@ -91,6 +78,8 @@ public class MapGame extends ApplicationAdapter {
 
         loadedScenes = new Array<>();
 
+        logFramebuffer();
+
         // Initialize scene loader
         sceneLoader = new SceneLoader();
 
@@ -98,6 +87,27 @@ public class MapGame extends ApplicationAdapter {
         loadScene(MODEL_PATH);
 
         Gdx.app.log("MapGame", "Application created successfully");
+    }
+
+    /**
+     * Reports what the driver actually granted. A framebuffer that silently comes
+     * back without multisampling looks exactly like one with it, so asking is
+     * cheaper than staring at jagged edges.
+     */
+private void logFramebuffer() {
+        IntBuffer params = BufferUtils.newIntBuffer(1);
+
+        Gdx.gl.glGetIntegerv(GL20.GL_SAMPLES, params);
+        int samples = params.get(0);
+
+        params.position(0);
+        Gdx.gl.glGetIntegerv(GL20.GL_DEPTH_BITS, params);
+        int depthBits = params.get(0);
+
+        Gdx.app.log("MapGame", "Framebuffer: samples=" + samples + " depthBits=" + depthBits);
+        if (samples < 2) {
+            Gdx.app.error("MapGame", "No multisampling active, edges will be aliased");
+        }
     }
 
     private void loadScene(String modelPath) {
@@ -182,16 +192,5 @@ public class MapGame extends ApplicationAdapter {
         if (sceneLoader != null) {
             sceneLoader.dispose();
         }
-    }
-
-    public static void main(String[] args) {
-        Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
-        config.setTitle("RSREU 3D Map");
-        config.setWindowedMode(1280, 720);
-        config.setBackBufferConfig(8, 8, 8, 8, DEPTH_BITS, 0, SAMPLES);
-        config.useVsync(true);
-        config.setForegroundFPS(144);
-
-        new Lwjgl3Application(new MapGame(), config);
     }
 }
