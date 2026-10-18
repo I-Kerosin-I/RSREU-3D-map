@@ -66,7 +66,7 @@ public class MapGame extends ApplicationAdapter {
 
     private void loadTestModel() {
         try {
-            String modelPath = "models/test.glb";
+            String modelPath = "models/MainCampus.glb";
             Scene scene = sceneLoader.loadScene(modelPath);
 
             if (scene != null) {
@@ -89,7 +89,7 @@ public class MapGame extends ApplicationAdapter {
                 Gdx.app.log("MapGame", "Warning: Could not load test model, scene is null");
             }
         } catch (Exception e) {
-            Gdx.app.log("MapGame", "Could not load test.glb: " + e.getMessage());
+            Gdx.app.log("MapGame", "Could not load MainCampus.glb: " + e.getMessage());
             e.printStackTrace();
         }
     }
