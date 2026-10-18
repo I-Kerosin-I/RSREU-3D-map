@@ -32,10 +32,10 @@ public class CameraInputController extends InputAdapter {
     private static final float MAX_PITCH = 85f;
 
     private static final float MIN_ORBIT_DISTANCE = 1f;
-    private static final float MAX_ORBIT_DISTANCE = 500f;
+    private static final float MAX_ORBIT_DISTANCE = 30f;
 
     /** Distance from the camera to the orbit pivot, in world units. */
-    private float orbitDistance = 10f;
+    private float orbitDistance = 5f;
 
     private static final Vector3 LOCAL_FORWARD = new Vector3(0f, 0f, -1f);
     private static final Vector3 LOCAL_UP = new Vector3(0f, 1f, 0f);

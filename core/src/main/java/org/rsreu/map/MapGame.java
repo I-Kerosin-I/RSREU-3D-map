@@ -5,11 +5,13 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.utils.Array;
 import net.mgsx.gltf.scene3d.scene.Scene;
 import net.mgsx.gltf.scene3d.scene.SceneManager;
 import org.rsreu.map.input.CameraInputController;
+import org.rsreu.map.render.EdgeHighlighter;
 import org.rsreu.map.render.SceneLoader;
 
 /**
@@ -18,6 +20,40 @@ import org.rsreu.map.render.SceneLoader;
  * Uses SceneManager from gdx-gltf for native PBR rendering.
  */
 public class MapGame extends ApplicationAdapter {
+
+    private static final String MODEL_PATH = "models/MainCampus.glb";
+
+    /** Color of the edge wireframe that overlays the building surface. */
+    private static final Color EDGE_ACCENT_COLOR = new Color(0x2f6db2);
+
+    /**
+     * Depth bias for the filled geometry. The edge wireframe is exactly coplanar
+     * with the building surface, so both produce identical depth values and fight
+     * over the depth buffer. Polygon offset only affects filled triangles, never
+     * line primitives, so a positive bias pushes the walls away and lets the edges
+     * win.
+     * <p>
+     * The factor is deliberately zero: it scales with the depth slope of a
+     * triangle, which for the large, nearly edge-on triangles of a building would
+     * push whole walls far too far back and let the wireframe shine through them.
+     * A pure unit bias is enough to break an exact tie and is predictable.
+     */
+    private static final float POLYGON_OFFSET_FACTOR = 1f;
+    private static final float POLYGON_OFFSET_UNITS = 2f;
+
+    /**
+     * Multisample count of the back buffer. libGDX defaults to 0, which means no
+     * anti-aliasing at all: straight lines, jagged silhouettes and a crawling
+     * 1 pixel edge wireframe.
+     */
+    private static final int SAMPLES = 0;
+
+    /**
+     * libGDX defaults to a 16 bit depth buffer, which is far too coarse for the
+     * near and far planes of a 3D scene and makes surfaces shimmer while the
+     * camera moves.
+     */
+    private static final int DEPTH_BITS = 24;
 
     private PerspectiveCamera camera;
     private CameraInputController cameraController;
@@ -32,7 +68,7 @@ public class MapGame extends ApplicationAdapter {
 
         // Set up camera
         camera = new PerspectiveCamera(60f, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        camera.position.set(5f, 0f, 0f);
+        camera.position.set(0f, 0.2f, 5f);
         camera.lookAt(0f, 0f, 0f);
         camera.near = 0.1f;
         camera.far = 1000f;
@@ -45,10 +81,10 @@ public class MapGame extends ApplicationAdapter {
         // Set up SceneManager with PBR rendering
         sceneManager = new SceneManager();
         sceneManager.setCamera(camera);
-        
+
         // Set ambient light
         sceneManager.setAmbientLight(0.8f);
-        
+
         // Add directional light
         sceneManager.environment.add(new com.badlogic.gdx.graphics.g3d.environment.DirectionalLight()
             .set(Color.WHITE, -1f, -1f, -1f));
@@ -58,40 +94,46 @@ public class MapGame extends ApplicationAdapter {
         // Initialize scene loader
         sceneLoader = new SceneLoader();
 
-        // Load the test GLB model
-        loadTestModel();
+        // Load the campus model
+        loadScene(MODEL_PATH);
 
         Gdx.app.log("MapGame", "Application created successfully");
     }
 
-    private void loadTestModel() {
+    private void loadScene(String modelPath) {
         try {
-            String modelPath = "models/MainCampus.glb";
             Scene scene = sceneLoader.loadScene(modelPath);
 
-            if (scene != null) {
-                // Add scene to SceneManager (appends scene's lights to environment automatically)
-                sceneManager.addScene(scene, true);
-                loadedScenes.add(scene);
-                Gdx.app.log("MapGame", "Successfully loaded and added scene: " + modelPath);
-
-                // Debug: print model info
-                if (scene.modelInstance != null) {
-                    Gdx.app.log("MapGame", "  Transform: " + scene.modelInstance.transform);
-                    if (scene.modelInstance.model != null) {
-                        Gdx.app.log("MapGame", "  Meshes: " + scene.modelInstance.model.meshParts.size);
-                        Gdx.app.log("MapGame", "  Materials: " + scene.modelInstance.model.materials.size);
-                    }
-                } else {
-                    Gdx.app.log("MapGame", "  Warning: modelInstance is null!");
-                }
-            } else {
-                Gdx.app.log("MapGame", "Warning: Could not load test model, scene is null");
+            if (scene == null) {
+                Gdx.app.error("MapGame", "Could not load model: " + modelPath);
+                return;
             }
+
+            // Add scene to SceneManager (appends scene's lights to environment automatically)
+            sceneManager.addScene(scene, true);
+            loadedScenes.add(scene);
+            Gdx.app.log("MapGame", "Successfully loaded and added scene: " + modelPath);
+
+            styleEdges(scene);
         } catch (Exception e) {
-            Gdx.app.log("MapGame", "Could not load MainCampus.glb: " + e.getMessage());
-            e.printStackTrace();
+            Gdx.app.error("MapGame", "Could not load " + modelPath + ": " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Colors the line primitives of the scene, which carry the edge wireframe.
+     */
+    private void styleEdges(Scene scene) {
+        if (scene.modelInstance == null) {
+            Gdx.app.error("MapGame", "modelInstance is null, edges left unstyled");
+            return;
+        }
+
+        int lineParts = EdgeHighlighter.countLineParts(scene.modelInstance);
+        int recolored = EdgeHighlighter.applyAccentColor(scene.modelInstance, EDGE_ACCENT_COLOR);
+
+        Gdx.app.log("MapGame", "Edge wireframe: " + lineParts + " line part(s), "
+            + recolored + " recolored with " + EDGE_ACCENT_COLOR);
     }
 
     @Override
@@ -102,17 +144,22 @@ public class MapGame extends ApplicationAdapter {
         // Clear screen
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         Gdx.gl.glClearColor(0.25f, 0.25f, 0.35f, 1f);
-        Gdx.gl.glClear(com.badlogic.gdx.graphics.GL20.GL_COLOR_BUFFER_BIT | com.badlogic.gdx.graphics.GL20.GL_DEPTH_BUFFER_BIT);
-        Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
+        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
 
         // Update camera
         camera.update();
-        
+
         // Update SceneManager (animations, lights, etc.)
         sceneManager.update(Gdx.graphics.getDeltaTime());
-        
+
         // Render everything (shadows, reflections, colors)
+        Gdx.gl.glEnable(GL20.GL_POLYGON_OFFSET_FILL);
+        Gdx.gl.glPolygonOffset(POLYGON_OFFSET_FACTOR, POLYGON_OFFSET_UNITS);
+
         sceneManager.render();
+
+        Gdx.gl.glDisable(GL20.GL_POLYGON_OFFSET_FILL);
     }
 
     @Override
@@ -141,8 +188,9 @@ public class MapGame extends ApplicationAdapter {
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setTitle("RSREU 3D Map");
         config.setWindowedMode(1280, 720);
+        config.setBackBufferConfig(8, 8, 8, 8, DEPTH_BITS, 0, SAMPLES);
         config.useVsync(true);
-        config.setForegroundFPS(60);
+        config.setForegroundFPS(144);
 
         new Lwjgl3Application(new MapGame(), config);
     }
