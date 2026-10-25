@@ -86,53 +86,56 @@ Standard Android application. Creates `AndroidApplication` with the same `MapGam
 
 ## Control Flow
 
-```
-User Input (click / touch)
-    ↓
-InputController
-    ↓
-MapController.resolveSelection(modelNodeName)
-    ↓
-CampusRepository.findRoomByNodeName(modelNodeName)  → domain.RoomId
-    ↓
-SelectRoomUseCase.execute(roomId)
-    ↓
-MapController.updateSelectedRoom(roomId)
-    ↓
-RoomHighlighter.buildHighlight(room)  → RenderRoom
-    ↓
-Renderer draws highlight
-```
+### Mouse hover → floor isolation
 
 ```
-User Input (search query)
+mouseMoved(screenX, screenY)
     ↓
-InputController
+RoomPicker.pick(screenX, screenY, camera, modelInstance)
+    ↓  (ray → hitbox AABB test → closest hit)
+hitbox node name → "main_room_210_hitbox"
+parent floor node → "floor2"
     ↓
-MapController.search(query)
+RoomMaterialManager.applyFloorIsolation(hoveredFloor = "floor2")
     ↓
-FindRoomsUseCase.execute(query)
-    ↓
-MapController.updateSearchResults(results)
-    ↓
-SearchResultsUi displays
+floor "floor2" → opaque
+all other floors → dimmed (α=0.15, darkened)
+main_campus → dimmed (α=0.15)
 ```
 
+### Mouse click → floor selection (lock)
+
 ```
-User Input (click on nav target)
+click(screenX, screenY)
     ↓
-MapController.requestRoute(fromRoomId, toRoomId)
+if hit a floor:
+    RoomMaterialManager.setSelectedFloor(floorId)
+    → selected floor opaque
+    → all other floors HIDDEN (α=0, fully transparent)
+    → selectionLocked = true
     ↓
-FindRouteUseCase.execute(from, to)
-    ↓
-NavigationGraph.findPath(from, to)  → Route
-    ↓
-MapController.updateRoute(route)
-    ↓
-RouteRenderer.build(route)  → RenderRoute
-    ↓
-Renderer draws path
+    on subsequent mouseMoved:
+        RoomPicker.pick() → room hitbox
+        RoomMaterialManager.setHitboxHighlighted(roomId)
+else (click on empty space):
+    RoomMaterialManager.resetAll()
+    selectionLocked = false
 ```
+
+### Escape key → reset to normal
+
+```
+RoomMaterialManager.resetAll()
+selectionLocked = false
+all floors → opaque
+```
+
+## Render Pass Order
+
+1. Opaque pass (building shell, floor geometry, edges) — `depthWrite = true`
+2. Transparent pass (dimmed floors, hitbox highlights) — `depthWrite = false`
+
+`SceneManager` handles this automatically. `RoomMaterialManager` enables/disables `BlendingAttribute` and adjusts `PBRColorAttribute` per floor node to achieve dim/highlight effects.
 
 ## Modules and Dependencies
 

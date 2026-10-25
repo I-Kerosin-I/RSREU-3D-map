@@ -28,14 +28,10 @@ RSREU_3D_Map/
 │       ├── geometry/
 │       │   ├── Point3.java
 │       │   └── Bounds3.java
-│       ├── model/
-│       │   ├── BuildingId.java
-│       │   ├── FloorId.java
-│       │   └── RoomId.java
-│       └── rsreu/
-│           └── map/
-│               └── domain/
-│                   └── Manifest.java
+│       └── model/
+│           ├── BuildingId.java
+│           ├── FloorId.java
+│           └── RoomId.java
 │
 ├── application/                    # Maven module
 │   ├── pom.xml
@@ -62,18 +58,15 @@ RSREU_3D_Map/
 │       │   ├── ManifestParser.java
 │       │   └── ContentValidator.java
 │       ├── render/
-│       │   ├── BuildingRenderer.java
-│       │   ├── RoomHighlighter.java
+│       │   ├── EdgeHighlighter.java      # colors line primitives with accent
+│       │   ├── RoomMaterialManager.java  # floor dim/highlight/hide materials
+│       │   ├── RoomHighlighter.java      # coordinates: picker + materials + state
 │       │   ├── RouteRenderer.java
 │       │   ├── SceneLoader.java
-│       │   └── model/
-│       │       ├── RenderBuilding.java
-│       │       ├── RenderRoom.java
-│       │       └── RenderRoute.java
+│       │   └── BuildingRenderer.java
 │       ├── input/
-│       │   ├── InputController.java
 │       │   ├── CameraInputController.java
-│       │   └── SelectionInputController.java
+│       │   └── RoomPicker.java           # ray → hitbox → Space
 │       └── ui/
 │           ├── MapScreen.java
 │           ├── RoomSearchUi.java
@@ -85,10 +78,9 @@ RSREU_3D_Map/
 │       └── DesktopLauncher.java
 │
 └── assets/                          # Not a Maven module
-    ├── manifest.json
+    ├── manifest.json                # Building metadata (names, departments, navigation)
     └── models/
-        ├── main-building.glb
-        └── ... .glb
+        └── MainCampus.glb           # Floor-based hierarchy with *_hitbox nodes
 ```
 
 ## Maven Modules
@@ -122,12 +114,12 @@ Each child module inherits from parent:
 
 ## assets/
 
-Contains runtime data — glTF models and manifest. Not a Java module.
+Contains runtime data — glTF models and manifest.
 
-- `manifest.json` — building catalog (floors, rooms, navigation graph)
-- `models/*.glb` — one GLB per building, no textures, mesh only
+- `manifest.json` — room metadata (names, departments, types). Hitbox geometry lives in the GLB, not here.
+- `models/*.glb` — one GLB per building. Floor-based node hierarchy with `*_hitbox` nodes for ray picking.
 
-Loaded at startup by `core/content/ManifestLoader`.
+Hitboxes are **not** in `manifest.json`. All ray-picking geometry is embedded in the GLB as invisible box meshes. The manifest provides domain metadata (display names, department assignments) only.
 
 When porting to Android, files under `assets/` are placed in `android/app/src/main/assets/`.
 
@@ -142,25 +134,56 @@ application/   →  depends on  →  domain
 desktop/       →  depends on  →  core, LWJGL backend
 ```
 
-## Render Model (plain objects for renderer)
+## Key Classes
 
-These exist in `core/render/model/`. They are not domain entities.
+### RoomMaterialManager
+
+Manages per-floor and per-hitbox material state:
 
 ```java
-// RenderRoom: data the renderer needs, not domain logic
-public record RenderRoom(
-    RoomId id,
-    String displayName,
-    Color highlightColor,
-    boolean pulsate,
-    List<Vector3> outlineVertices
-) {}
+public class RoomMaterialManager {
+    // Floor opacity states
+    void setFloorDimmed(String floorNodeName, boolean dimmed);   // hover
+    void setFloorHidden(String floorNodeName, boolean hidden);   // click
+    void setFloorSelected(String floorNodeName, boolean selected);
+    void setMainCampusDimmed(boolean dimmed);
+
+    // Hitbox visibility
+    void setHitboxHighlighted(String hitboxNodeName, boolean highlighted);
+
+    // Reset
+    void resetAll();
+}
 ```
 
-Conversion happens in `RoomHighlighter` (or similar):
+Uses `PBRColorAttribute.createBaseColorFactor` and `BlendingAttribute` on `NodePart.material` of floor nodes and hitbox nodes. Materials are private copies per `ModelInstance`.
+
+### RoomPicker
+
+Ray picking against `*_hitbox` nodes:
+
+```java
+public class RoomPicker {
+    Space pick(float screenX, float screenY, PerspectiveCamera camera, ModelInstance instance);
+    // Returns: null (miss) or Space whose modelNodeName = hitbox parent (floor node)
+}
 ```
-domain.Space  →  RenderRoom  →  BuildingRenderer.drawRoom(renderRoom)
+
+Uses `camera.getPickRay()`, `Intersector.intersectRayBounds()`, and `Node.calculateWorldTransform()` + `Node.calculateBoundingBox(box, true)`.
+
+### RoomHighlighter
+
+Coordinates the interaction loop:
+
+```java
+public class RoomHighlighter {
+    void onMouseMoved(int screenX, int screenY);   // updates floor isolation
+    void onClick(int screenX, int screenY);       // locks floor selection
+    void clearSelection();                         // Escape / click empty space
+}
 ```
+
+Maintains `selectionLocked` flag. When locked, `onMouseMoved` only updates hitbox highlight, not floor isolation.
 
 ## Android Structure (future)
 
