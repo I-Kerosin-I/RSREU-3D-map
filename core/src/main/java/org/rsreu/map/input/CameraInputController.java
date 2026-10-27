@@ -7,6 +7,7 @@ import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.Quaternion;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.Ray;
+import org.rsreu.map.render.RoomHighlighter;
 
 /**
  * Orbit camera controller.
@@ -34,6 +35,9 @@ public class CameraInputController extends InputAdapter {
     private static final float MIN_ORBIT_DISTANCE = 1f;
     private static final float MAX_ORBIT_DISTANCE = 30f;
 
+    /** Squared drag distance below which a left click is treated as a selection click. */
+    private static final float CLICK_DIST_SQ = 9f;
+
     /** Distance from the camera to the orbit pivot, in world units. */
     private float orbitDistance = 5f;
 
@@ -42,6 +46,11 @@ public class CameraInputController extends InputAdapter {
     private static final Vector3 LOCAL_RIGHT = new Vector3(1f, 0f, 0f);
 
     private PerspectiveCamera camera;
+
+    /** Optional room interaction controller, wired by the game. */
+    private RoomHighlighter roomHighlighter;
+
+    private float dragMovedSq;
 
     /** Camera orientation, roll free by construction. */
     private final Quaternion orientation = new Quaternion();
@@ -77,6 +86,14 @@ public class CameraInputController extends InputAdapter {
     }
 
     /**
+     * Wires the room interaction controller. The camera controller forwards mouse
+     * movement, selection clicks and Escape to it.
+     */
+    public void setRoomHighlighter(RoomHighlighter roomHighlighter) {
+        this.roomHighlighter = roomHighlighter;
+    }
+
+    /**
      * Rebuilds the orientation quaternion from the current camera direction so the
      * controller always continues from the actual camera state.
      */
@@ -94,6 +111,7 @@ public class CameraInputController extends InputAdapter {
     public boolean touchDown(int screenX, int screenY, int pointer, int button) {
         lastX = screenX;
         lastY = screenY;
+        dragMovedSq = 0f;
 
         if (camera == null) {
             return false;
@@ -114,7 +132,11 @@ public class CameraInputController extends InputAdapter {
     @Override
     public boolean touchUp(int screenX, int screenY, int pointer, int button) {
         if (button == Input.Buttons.LEFT) {
+            boolean click = dragMovedSq <= CLICK_DIST_SQ;
             panning = false;
+            if (click && roomHighlighter != null) {
+                roomHighlighter.onClick(screenX, screenY);
+            }
         } else if (button == Input.Buttons.RIGHT) {
             orbiting = false;
         }
@@ -131,6 +153,7 @@ public class CameraInputController extends InputAdapter {
         float deltaY = screenY - lastY;
         lastX = screenX;
         lastY = screenY;
+        dragMovedSq += deltaX * deltaX + deltaY * deltaY;
 
         if (orbiting) {
             orbit(deltaX, deltaY);
@@ -139,6 +162,14 @@ public class CameraInputController extends InputAdapter {
         if (panning) {
             pan(deltaX, deltaY);
             return true;
+        }
+        return false;
+    }
+
+    @Override
+    public boolean mouseMoved(int screenX, int screenY) {
+        if (roomHighlighter != null) {
+            roomHighlighter.onMouseMoved(screenX, screenY);
         }
         return false;
     }
@@ -258,6 +289,12 @@ public class CameraInputController extends InputAdapter {
     @Override
     public boolean keyDown(int keycode) {
         return switch (keycode) {
+            case Input.Keys.ESCAPE -> {
+                if (roomHighlighter != null) {
+                    roomHighlighter.clearSelection();
+                }
+                yield true;
+            }
             case Input.Keys.W -> {
                 keyW = true;
                 yield true;
