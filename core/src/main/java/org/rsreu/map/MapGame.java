@@ -10,7 +10,10 @@ import com.badlogic.gdx.utils.BufferUtils;
 import net.mgsx.gltf.scene3d.scene.Scene;
 import net.mgsx.gltf.scene3d.scene.SceneManager;
 import org.rsreu.map.input.CameraInputController;
+import org.rsreu.map.input.RoomPicker;
 import org.rsreu.map.render.EdgeHighlighter;
+import org.rsreu.map.render.RoomHighlighter;
+import org.rsreu.map.render.RoomMaterialManager;
 import org.rsreu.map.render.SceneLoader;
 
 import java.nio.IntBuffer;
@@ -125,6 +128,12 @@ private void logFramebuffer() {
             Gdx.app.log("MapGame", "Successfully loaded and added scene: " + modelPath);
 
             styleEdges(scene);
+
+            // Interactive floor isolation / room highlighting.
+            RoomMaterialManager roomMaterials = new RoomMaterialManager(scene.modelInstance);
+            RoomPicker roomPicker = new RoomPicker(scene.modelInstance.nodes);
+            RoomHighlighter roomHighlighter = new RoomHighlighter(camera, roomPicker, roomMaterials);
+            cameraController.setRoomHighlighter(roomHighlighter);
         } catch (Exception e) {
             Gdx.app.error("MapGame", "Could not load " + modelPath + ": " + e.getMessage(), e);
         }
