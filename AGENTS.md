@@ -100,7 +100,18 @@ Each floor node (walls, floor, hitboxes inside) gets material modifications:
 | Hidden (click, other floor) | α=0 → effectively invisible | — | no |
 | Hitbox highlighted | SRC_ALPHA / ONE_MINUS_SRC_ALPHA, α=0.6 | accent color | no |
 
+State changes do not snap: every unit animates its alpha / dim / highlight amount exponentially towards the target (≈0.25 s), advanced by `RoomMaterialManager.update(deltaTime)` from `MapGame.render()`. Once a unit settles back in the Normal state, its original material is restored.
+
 `BlendingAttribute` + `PBRColorAttribute.createBaseColorFactor` are set per-node via mutable `NodePart` materials. Materials are private copies per `ModelInstance`, so changes don't leak.
+
+## Camera Control
+
+`CameraInputController` is an orbit camera (LMB pan, RMB orbit, wheel zoom, WASD move). All motion is slightly smoothed:
+
+- Released drags keep orbiting / panning with an exponentially decaying velocity (release after ~0.1 s of pointer idle does not glide; grabbing stops the glide).
+- The wheel sets a zoom target; the orbit distance approaches it smoothly.
+- WASD velocity accelerates and brakes softly.
+- Frame time used for camera motion is clamped (hitch guard).
 
 ## Development
 

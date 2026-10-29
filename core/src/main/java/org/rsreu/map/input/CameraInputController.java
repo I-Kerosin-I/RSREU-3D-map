@@ -7,6 +7,7 @@ import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.Quaternion;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.Ray;
+import com.badlogic.gdx.utils.TimeUtils;
 import org.rsreu.map.render.RoomHighlighter;
 
 /**
@@ -22,6 +23,11 @@ import org.rsreu.map.render.RoomHighlighter;
  * around the camera's own right axis, which is always horizontal. A rotation
  * around the view axis is never applied, so the camera can not accumulate roll
  * and always stays level with the world up vector.
+ *
+ * <p>All motion carries a bit of inertia: a released drag keeps orbiting /
+ * panning with exponentially decaying velocity, the wheel sets a zoom target the
+ * orbit distance approaches smoothly, and WASD movement accelerates and brakes
+ * softly. Grabbing the camera with any button stops the glide immediately.
  */
 public class CameraInputController extends InputAdapter {
 
@@ -35,11 +41,36 @@ public class CameraInputController extends InputAdapter {
     private static final float MIN_ORBIT_DISTANCE = 1f;
     private static final float MAX_ORBIT_DISTANCE = 30f;
 
+    /** Upper bound of the frame time used for camera motion, guards against hitches. */
+    private static final float MAX_FRAME_DELTA = 0.05f;
+    /** Longest drag event interval used for the velocity estimate, in seconds. */
+    private static final float MAX_EVENT_DELTA = 0.1f;
+    /** Smoothing of the drag velocity estimate, 1/s. */
+    private static final float DRAG_VELOCITY_SMOOTHING = 20f;
+    /** Exponential decay of the orbit and pan inertia after release, 1/s. */
+    private static final float ORBIT_DECAY = 4.5f;
+    private static final float PAN_DECAY = 4.5f;
+    /** Rate at which the orbit distance approaches the zoom target, 1/s. */
+    private static final float ZOOM_RATE = 9f;
+    /** Rate at which the WASD velocity approaches the pressed-key target, 1/s. */
+    private static final float KEY_RATE = 9f;
+    /** A release after this much pointer idle does not glide, in seconds. */
+    private static final float GLIDE_IDLE_MAX = 0.1f;
+    /** Velocities below these values snap to zero. */
+    private static final float ORBIT_VELOCITY_EPSILON = 1f;   // degrees per second
+    private static final float PAN_VELOCITY_EPSILON = 0.05f;  // world units per second
+    private static final float ZOOM_EPSILON = 0.005f;         // world units
+
+    private static final float NANOS_TO_SECONDS = 1e-9f;
+
     /** Squared drag distance below which a left click is treated as a selection click. */
     private static final float CLICK_DIST_SQ = 9f;
 
     /** Distance from the camera to the orbit pivot, in world units. */
     private float orbitDistance = 5f;
+
+    /** Zoom target the orbit distance smoothly approaches. */
+    private float targetOrbitDistance = 5f;
 
     private static final Vector3 LOCAL_FORWARD = new Vector3(0f, 0f, -1f);
     private static final Vector3 LOCAL_UP = new Vector3(0f, 1f, 0f);
@@ -70,6 +101,16 @@ public class CameraInputController extends InputAdapter {
     private boolean orbiting;
     private int lastX;
     private int lastY;
+
+    /** Orbit inertia: angular velocity in degrees per second. */
+    private float yawVelocity;
+    private float pitchVelocity;
+    /** Pan inertia in the horizontal plane, world units per second. */
+    private final Vector3 panVelocity = new Vector3();
+    /** Current WASD velocity in the horizontal plane, world units per second. */
+    private final Vector3 keyVelocity = new Vector3();
+    /** Timestamp of the last drag event, used to estimate the drag velocity. */
+    private long lastDragNanos;
 
     private boolean keyW;
     private boolean keyA;
@@ -112,6 +153,11 @@ public class CameraInputController extends InputAdapter {
         lastX = screenX;
         lastY = screenY;
         dragMovedSq = 0f;
+        lastDragNanos = TimeUtils.nanoTime();
+        // Grabbing the camera stops any glide that is still running.
+        yawVelocity = 0f;
+        pitchVelocity = 0f;
+        panVelocity.setZero();
 
         if (camera == null) {
             return false;
@@ -131,14 +177,25 @@ public class CameraInputController extends InputAdapter {
 
     @Override
     public boolean touchUp(int screenX, int screenY, int pointer, int button) {
+        // A pause before the release means the pointer was already still, so the
+        // drag should not glide on.
+        float idleSeconds = (TimeUtils.nanoTime() - lastDragNanos) * NANOS_TO_SECONDS;
+
         if (button == Input.Buttons.LEFT) {
             boolean click = dragMovedSq <= CLICK_DIST_SQ;
             panning = false;
+            if (idleSeconds > GLIDE_IDLE_MAX) {
+                panVelocity.setZero();
+            }
             if (click && roomHighlighter != null) {
                 roomHighlighter.onClick(screenX, screenY);
             }
         } else if (button == Input.Buttons.RIGHT) {
             orbiting = false;
+            if (idleSeconds > GLIDE_IDLE_MAX) {
+                yawVelocity = 0f;
+                pitchVelocity = 0f;
+            }
         }
         return panning || orbiting;
     }
@@ -149,6 +206,10 @@ public class CameraInputController extends InputAdapter {
             return false;
         }
 
+        long now = TimeUtils.nanoTime();
+        float eventDelta = clamp((now - lastDragNanos) * NANOS_TO_SECONDS, 0f, MAX_EVENT_DELTA);
+        lastDragNanos = now;
+
         float deltaX = screenX - lastX;
         float deltaY = screenY - lastY;
         lastX = screenX;
@@ -156,11 +217,18 @@ public class CameraInputController extends InputAdapter {
         dragMovedSq += deltaX * deltaX + deltaY * deltaY;
 
         if (orbiting) {
-            orbit(deltaX, deltaY);
+            float yaw = -deltaX * ROTATION_SPEED;
+            float pitch = -deltaY * ROTATION_SPEED;
+            orbit(yaw, pitch);
+            if (eventDelta > 0f) {
+                float s = 1f - (float) Math.exp(-DRAG_VELOCITY_SMOOTHING * eventDelta);
+                yawVelocity += (yaw / eventDelta - yawVelocity) * s;
+                pitchVelocity += (pitch / eventDelta - pitchVelocity) * s;
+            }
             return true;
         }
         if (panning) {
-            pan(deltaX, deltaY);
+            pan(deltaX, deltaY, eventDelta);
             return true;
         }
         return false;
@@ -188,30 +256,28 @@ public class CameraInputController extends InputAdapter {
     }
 
     /**
-     * Changes the orbit distance while keeping the pivot in front of the camera.
+     * Sets the zoom target while keeping the pivot in front of the camera. The
+     * orbit distance itself approaches the target smoothly in {@link #update()}.
      *
      * @param amount positive values zoom in, negative values zoom out
      */
     private void zoom(float amount) {
         // The pivot does not move, so it is recomputed from the current orbit
-        // distance before that distance is changed.
+        // distance before the distance starts changing.
         updatePivot();
 
-        orbitDistance = clamp(orbitDistance * (float) Math.pow(ZOOM_STEP, amount),
+        targetOrbitDistance = clamp(targetOrbitDistance * (float) Math.pow(ZOOM_STEP, amount),
             MIN_ORBIT_DISTANCE, MAX_ORBIT_DISTANCE);
-
-        tmpDirection.set(camera.direction).nor();
-        camera.position.set(pivot).mulAdd(tmpDirection, -orbitDistance);
-        camera.update();
     }
 
     /**
      * Orbits the camera around the pivot point. The camera position is rotated
      * around the pivot, and the orientation is rotated by the very same amount.
+     *
+     * @param yaw   rotation around the world up vector, in degrees
+     * @param pitch rotation around the camera's right axis, in degrees
      */
-    private void orbit(float deltaX, float deltaY) {
-        float yaw = -deltaX * ROTATION_SPEED;
-        float pitch = -deltaY * ROTATION_SPEED;
+    private void orbit(float yaw, float pitch) {
 
         // Keep the camera from tipping over the poles.
         float currentPitch = pitchDegrees();
@@ -237,9 +303,10 @@ public class CameraInputController extends InputAdapter {
 
     /**
      * Slides the camera and the pivot in the horizontal plane, keeping the viewing
-     * direction and the camera height unchanged.
+     * direction and the camera height unchanged. Also tracks the pan velocity for
+     * the inertia after release.
      */
-    private void pan(float deltaX, float deltaY) {
+    private void pan(float deltaX, float deltaY, float eventDelta) {
         horizontalForward(tmpDirection);
         tmpRight.set(tmpDirection).crs(Vector3.Y).nor();
 
@@ -249,8 +316,19 @@ public class CameraInputController extends InputAdapter {
             .mulAdd(tmpDirection, deltaY * scale);
         tmpMove.y = 0f;
 
-        camera.position.add(tmpMove);
-        pivot.add(tmpMove);
+        moveCameraAndPivot(tmpMove);
+
+        if (eventDelta > 0f) {
+            float s = 1f - (float) Math.exp(-DRAG_VELOCITY_SMOOTHING * eventDelta);
+            panVelocity.x += (tmpMove.x / eventDelta - panVelocity.x) * s;
+            panVelocity.z += (tmpMove.z / eventDelta - panVelocity.z) * s;
+        }
+    }
+
+    /** Shifts the camera and the pivot by the same offset. */
+    private void moveCameraAndPivot(Vector3 offset) {
+        camera.position.add(offset);
+        pivot.add(offset);
         camera.update();
     }
 
@@ -336,13 +414,27 @@ public class CameraInputController extends InputAdapter {
     }
 
     /**
-     * Applies WASD movement in the horizontal plane. Called from the render loop.
+     * Per-frame camera motion: WASD movement with soft acceleration, drag inertia
+     * and smooth zooming. Called from the render loop.
      */
     public void update() {
         if (camera == null) {
             return;
         }
+        float delta = clamp(Gdx.graphics.getDeltaTime(), 0f, MAX_FRAME_DELTA);
+        if (delta <= 0f) {
+            return;
+        }
+        updateKeyboardMove(delta);
+        updateInertia(delta);
+        updateZoom(delta);
+    }
 
+    /**
+     * Applies WASD movement in the horizontal plane. The velocity approaches the
+     * pressed-key target smoothly, so the camera softly starts and stops.
+     */
+    private void updateKeyboardMove(float delta) {
         horizontalForward(tmpDirection);
         tmpRight.set(tmpDirection).crs(Vector3.Y).nor();
         tmpMove.setZero();
@@ -352,15 +444,72 @@ public class CameraInputController extends InputAdapter {
         if (keyD) tmpMove.add(tmpRight);
         if (keyA) tmpMove.sub(tmpRight);
 
-        if (tmpMove.isZero()) {
-            return;
-        }
-
         // Only the horizontal part of the movement is applied.
         tmpMove.y = 0f;
-        tmpMove.nor().scl(Gdx.graphics.getDeltaTime() * KEY_MOVE_SPEED);
-        camera.position.add(tmpMove);
-        pivot.add(tmpMove);
+        if (!tmpMove.isZero()) {
+            tmpMove.nor().scl(KEY_MOVE_SPEED);
+        }
+
+        float s = 1f - (float) Math.exp(-KEY_RATE * delta);
+        keyVelocity.x += (tmpMove.x - keyVelocity.x) * s;
+        keyVelocity.z += (tmpMove.z - keyVelocity.z) * s;
+
+        if (keyVelocity.len2() > 1e-8f) {
+            moveCameraAndPivot(tmpMove.set(keyVelocity).scl(delta));
+        }
+    }
+
+    /**
+     * Continues orbit and pan motion after the drag is released, with the velocity
+     * decaying exponentially until it becomes negligible.
+     */
+    private void updateInertia(float delta) {
+        if (!orbiting) {
+            boolean moving = Math.abs(yawVelocity) > ORBIT_VELOCITY_EPSILON
+                || Math.abs(pitchVelocity) > ORBIT_VELOCITY_EPSILON;
+            if (moving) {
+                float pitch = pitchVelocity;
+                float currentPitch = pitchDegrees();
+                if ((currentPitch >= MAX_PITCH && pitch > 0f)
+                    || (currentPitch <= MIN_PITCH && pitch < 0f)) {
+                    // Pressed against the pitch limit: stop pitching, keep yawing.
+                    pitch = 0f;
+                    pitchVelocity = 0f;
+                }
+                orbit(yawVelocity * delta, pitch * delta);
+                float decay = (float) Math.exp(-ORBIT_DECAY * delta);
+                yawVelocity *= decay;
+                pitchVelocity *= decay;
+            } else {
+                yawVelocity = 0f;
+                pitchVelocity = 0f;
+            }
+        }
+        if (!panning) {
+            if (panVelocity.len2() > PAN_VELOCITY_EPSILON * PAN_VELOCITY_EPSILON) {
+                moveCameraAndPivot(tmpMove.set(panVelocity).scl(delta));
+                panVelocity.scl((float) Math.exp(-PAN_DECAY * delta));
+            } else {
+                panVelocity.setZero();
+            }
+        }
+    }
+
+    /**
+     * Moves the orbit distance exponentially towards the zoom target, keeping the
+     * pivot in place.
+     */
+    private void updateZoom(float delta) {
+        if (orbitDistance == targetOrbitDistance) {
+            return;
+        }
+        orbitDistance += (targetOrbitDistance - orbitDistance)
+            * (1f - (float) Math.exp(-ZOOM_RATE * delta));
+        if (Math.abs(targetOrbitDistance - orbitDistance) < ZOOM_EPSILON) {
+            orbitDistance = targetOrbitDistance;
+        }
+        tmpDirection.set(camera.direction).nor();
+        camera.position.set(pivot).mulAdd(tmpDirection, -orbitDistance);
         camera.update();
     }
 

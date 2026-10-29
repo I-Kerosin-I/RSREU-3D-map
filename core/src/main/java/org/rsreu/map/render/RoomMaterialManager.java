@@ -1,6 +1,5 @@
 package org.rsreu.map.render;
 
-import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.g3d.Material;
@@ -10,7 +9,6 @@ import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.model.Node;
 import com.badlogic.gdx.graphics.g3d.model.NodePart;
 import com.badlogic.gdx.utils.Array;
-import com.badlogic.gdx.utils.ObjectMap;
 import net.mgsx.gltf.scene3d.attributes.PBRColorAttribute;
 
 import java.util.regex.Pattern;
@@ -24,12 +22,15 @@ import java.util.regex.Pattern;
  * ray picking. This manager changes the material of every controlled part so a
  * floor can be shown opaque, dimmed, hidden, or highlighted.
  * <p>
+ * States do not snap into place: every unit keeps its current opacity and color
+ * and approaches the target of the last applied state exponentially, advanced by
+ * {@link #update(float)} from the render loop, so dimming, hiding and highlights
+ * all fade smoothly.
+ * <p>
  * Materials of the {@link ModelInstance} are made private copies, so the
  * underlying model and other instances are never affected.
  */
 public final class RoomMaterialManager {
-
-    private static final String TAG = "RoomMaterialManager";
 
     public static final String HITBOX_SUFFIX = "_hitbox";
     private static final Pattern FLOOR_PATTERN = Pattern.compile("floor\\d+");
@@ -44,21 +45,44 @@ public final class RoomMaterialManager {
     private static final float HIGHLIGHT_ALPHA = 0.6f;
     private static final Color HIGHLIGHT_COLOR = new Color(0x2f6db2);
 
+    /** Exponential approach rate of the animated opacity and color, 1/s. */
+    private static final float ANIMATION_RATE = 10f;
+    /** Remaining difference below which an animated value snaps to its target. */
+    private static final float ANIMATION_EPSILON = 0.004f;
+
     private enum State {
         NORMAL, DIMMED, HIDDEN, HIGHLIGHTED
     }
 
-    /** A set of parts that share one visual state. */
+    /**
+     * A set of parts that share one visual state. The state is described by
+     * three animated scalars: overall alpha, color dimming factor and the amount
+     * of the highlight color blended over the base color.
+     */
     private static final class Unit {
         final String name;
         final boolean hitbox;
         final Array<NodePart> parts = new Array<>();
         final Array<Material> originals = new Array<>();
         final Array<Color> baseColors = new Array<>();
+        /** Working materials with animatable attributes, created on first use. */
+        final Array<Material> animated = new Array<>();
+
+        float alpha;
+        float dim = 1f;
+        float highlight = 0f;
+        float targetAlpha;
+        float targetDim = 1f;
+        float targetHighlight = 0f;
+        boolean animating = false;
 
         Unit(String name, boolean hitbox) {
             this.name = name;
             this.hitbox = hitbox;
+            // At rest a hitbox shows its original (invisible) material, so its
+            // neutral alpha is 0 rather than 1.
+            alpha = hitbox ? HIDDEN_ALPHA : 1f;
+            targetAlpha = alpha;
         }
     }
 
@@ -79,7 +103,7 @@ public final class RoomMaterialManager {
      */
     public void resetAll() {
         for (Unit unit : units) {
-            applyState(unit, State.NORMAL);
+            setTarget(unit, State.NORMAL);
         }
     }
 
@@ -99,7 +123,7 @@ public final class RoomMaterialManager {
             } else {
                 state = State.DIMMED; // shell / edges
             }
-            applyState(unit, state);
+            setTarget(unit, state);
         }
     }
 
@@ -119,7 +143,7 @@ public final class RoomMaterialManager {
             } else {
                 state = State.HIDDEN; // shell / edges
             }
-            applyState(unit, state);
+            setTarget(unit, state);
         }
     }
 
@@ -133,7 +157,43 @@ public final class RoomMaterialManager {
     public void setHitboxHighlighted(String hitboxNodeName, boolean highlighted) {
         for (Unit unit : units) {
             if (unit.hitbox && unit.name.equals(hitboxNodeName)) {
-                applyState(unit, highlighted ? State.HIGHLIGHTED : State.NORMAL);
+                setTarget(unit, highlighted ? State.HIGHLIGHTED : State.NORMAL);
+            }
+        }
+    }
+
+    /**
+     * Advances the opacity / color animation of every unit that has not reached
+     * its target state yet. Call once per frame before rendering.
+     *
+     * @param deltaTime seconds elapsed since the last call
+     */
+    public void update(float deltaTime) {
+        if (deltaTime <= 0f) {
+            return;
+        }
+        float approach = 1f - (float) Math.exp(-ANIMATION_RATE * deltaTime);
+        for (Unit unit : units) {
+            if (!unit.animating) {
+                continue;
+            }
+            unit.alpha += (unit.targetAlpha - unit.alpha) * approach;
+            unit.dim += (unit.targetDim - unit.dim) * approach;
+            unit.highlight += (unit.targetHighlight - unit.highlight) * approach;
+
+            boolean settled = Math.abs(unit.targetAlpha - unit.alpha) < ANIMATION_EPSILON
+                && Math.abs(unit.targetDim - unit.dim) < ANIMATION_EPSILON
+                && Math.abs(unit.targetHighlight - unit.highlight) < ANIMATION_EPSILON;
+            if (settled) {
+                unit.alpha = unit.targetAlpha;
+                unit.dim = unit.targetDim;
+                unit.highlight = unit.targetHighlight;
+                unit.animating = false;
+            }
+            if (!unit.animating && isRestNormal(unit)) {
+                restoreOriginals(unit);
+            } else {
+                writeAnimatedState(unit);
             }
         }
     }
@@ -194,26 +254,90 @@ public final class RoomMaterialManager {
         }
     }
 
-    private void applyState(Unit unit, State state) {
-        for (int i = 0; i < unit.parts.size; i++) {
-            Material material = new Material(unit.originals.get(i));
-            switch (state) {
-                case DIMMED -> {
-                    Color base = unit.baseColors.get(i);
-                    material.set(PBRColorAttribute.createBaseColorFactor(
-                        new Color(base.r * DIM_FACTOR, base.g * DIM_FACTOR, base.b * DIM_FACTOR, 1f)));
-                    material.set(new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, DIM_ALPHA));
-                }
-                case HIDDEN ->
-                    material.set(new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, HIDDEN_ALPHA));
-                case HIGHLIGHTED -> {
-                    material.set(PBRColorAttribute.createBaseColorFactor(HIGHLIGHT_COLOR));
-                    material.set(new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, HIGHLIGHT_ALPHA));
-                }
-                case NORMAL -> { /* material is already the original snapshot */ }
+    /**
+     * Sets the target values of the animated parameters for a state and starts
+     * the animation if the target actually changed.
+     */
+    private void setTarget(Unit unit, State state) {
+        float alpha;
+        float dim = 1f;
+        float highlight = 0f;
+        switch (state) {
+            case NORMAL -> alpha = unit.hitbox ? HIDDEN_ALPHA : 1f;
+            case DIMMED -> {
+                alpha = DIM_ALPHA;
+                dim = DIM_FACTOR;
             }
-            unit.parts.get(i).material = material;
+            case HIDDEN -> alpha = HIDDEN_ALPHA;
+            case HIGHLIGHTED -> {
+                alpha = HIGHLIGHT_ALPHA;
+                highlight = 1f;
+            }
+            default -> alpha = 1f;
         }
+        if (unit.targetAlpha == alpha && unit.targetDim == dim && unit.targetHighlight == highlight) {
+            return;
+        }
+        unit.targetAlpha = alpha;
+        unit.targetDim = dim;
+        unit.targetHighlight = highlight;
+        unit.animating = true;
+    }
+
+    /** True when the unit rests in the NORMAL state and can drop its working material. */
+    private boolean isRestNormal(Unit unit) {
+        return unit.targetAlpha == (unit.hitbox ? HIDDEN_ALPHA : 1f)
+            && unit.targetDim == 1f
+            && unit.targetHighlight == 0f;
+    }
+
+    /** Swaps every part back to a pristine copy of its original material. */
+    private void restoreOriginals(Unit unit) {
+        for (int i = 0; i < unit.parts.size; i++) {
+            unit.parts.get(i).material = new Material(unit.originals.get(i));
+        }
+    }
+
+    /**
+     * Writes the current animated values into the working materials, creating
+     * them on first use.
+     */
+    private void writeAnimatedState(Unit unit) {
+        for (int i = 0; i < unit.parts.size; i++) {
+            Material material = animatedMaterial(unit, i);
+            Color base = unit.baseColors.get(i);
+            ColorAttribute color = (ColorAttribute) material.get(PBRColorAttribute.BaseColorFactor);
+            color.color.set(
+                lerp(base.r * unit.dim, HIGHLIGHT_COLOR.r, unit.highlight),
+                lerp(base.g * unit.dim, HIGHLIGHT_COLOR.g, unit.highlight),
+                lerp(base.b * unit.dim, HIGHLIGHT_COLOR.b, unit.highlight),
+                1f);
+            ((BlendingAttribute) material.get(BlendingAttribute.Type)).opacity = unit.alpha;
+        }
+    }
+
+    /**
+     * Returns the working material of a part and makes it the part's current
+     * material, creating the working copy from the original snapshot on first
+     * use. Fresh attribute instances replace the shared ones, because the
+     * working material is mutated in place every frame.
+     */
+    private Material animatedMaterial(Unit unit, int index) {
+        Material material;
+        if (index < unit.animated.size) {
+            material = unit.animated.get(index);
+        } else {
+            material = new Material(unit.originals.get(index));
+            material.set(PBRColorAttribute.createBaseColorFactor(new Color(unit.baseColors.get(index))));
+            material.set(new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, unit.alpha));
+            unit.animated.add(material);
+        }
+        unit.parts.get(index).material = material;
+        return material;
+    }
+
+    private static float lerp(float from, float to, float t) {
+        return from + (to - from) * t;
     }
 
     private static boolean isFloor(String name) {

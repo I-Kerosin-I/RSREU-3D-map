@@ -52,6 +52,9 @@ public class MapGame extends ApplicationAdapter {
     private SceneLoader sceneLoader;
     private Array<Scene> loadedScenes;
 
+    /** Animates floor / room opacity transitions of the loaded scene. */
+    private RoomMaterialManager roomMaterials;
+
     @Override
     public void create() {
         Gdx.app.log("MapGame", "Creating RSREU 3D Map application");
@@ -130,7 +133,7 @@ private void logFramebuffer() {
             styleEdges(scene);
 
             // Interactive floor isolation / room highlighting.
-            RoomMaterialManager roomMaterials = new RoomMaterialManager(scene.modelInstance);
+            roomMaterials = new RoomMaterialManager(scene.modelInstance);
             RoomPicker roomPicker = new RoomPicker(scene.modelInstance.nodes);
             RoomHighlighter roomHighlighter = new RoomHighlighter(camera, roomPicker, roomMaterials);
             cameraController.setRoomHighlighter(roomHighlighter);
@@ -159,6 +162,11 @@ private void logFramebuffer() {
     public void render() {
         // Update camera based on input
         cameraController.update();
+
+        // Advance the floor / room opacity and highlight animation
+        if (roomMaterials != null) {
+            roomMaterials.update(Gdx.graphics.getDeltaTime());
+        }
 
         // Clear screen
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
