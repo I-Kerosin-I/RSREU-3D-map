@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.g3d.Material;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.attributes.BlendingAttribute;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
+import com.badlogic.gdx.graphics.g3d.attributes.DepthTestAttribute;
 import com.badlogic.gdx.graphics.g3d.model.Node;
 import com.badlogic.gdx.graphics.g3d.model.NodePart;
 import com.badlogic.gdx.utils.Array;
@@ -16,16 +17,25 @@ import java.util.regex.Pattern;
 /**
  * Applies opacity / color states to the nodes of a building model.
  * <p>
- * The building is organised as floor containers (nodes named {@code floorN})
- * that own the walls, floor slab and edge wireframe of that floor, plus a
- * {@code main_campus} shell node and invisible {@code *_hitbox} cubes used for
- * ray picking. This manager changes the material of every controlled part so a
- * floor can be shown opaque, dimmed, hidden, or highlighted.
+ * The model nests everything below wrapper nodes (e.g. {@code Scene Collection
+ * -> Main}), so floor containers (nodes named {@code floorN}, wherever they sit
+ * in the tree) are discovered recursively; each floor unit owns the whole
+ * subtree of its container except hitboxes. All remaining geometry — the outer
+ * shell, its wireframe and stray root parts — forms a single shell unit.
+ * Invisible {@code *_hitbox} cubes used for ray picking become units of their
+ * own.
  * <p>
  * States do not snap into place: every unit keeps its current opacity and color
  * and approaches the target of the last applied state exponentially, advanced by
  * {@link #update(float)} from the render loop, so dimming, hiding and highlights
  * all fade smoothly.
+ * <p>
+ * Visibility is only partly a material question. A translucent surface must not
+ * write depth (it would occlude the geometry behind it), so animated materials
+ * carry a {@link DepthTestAttribute} whose depth mask follows the opacity. And
+ * geometry that is fully invisible — hitboxes that are not highlighted, floors
+ * hidden by a selection — is taken out of rendering entirely by clearing
+ * {@link NodePart#enabled}, because the hitbox materials of the GLB are opaque.
  * <p>
  * Materials of the {@link ModelInstance} are made private copies, so the
  * underlying model and other instances are never affected.
@@ -34,6 +44,9 @@ public final class RoomMaterialManager {
 
     public static final String HITBOX_SUFFIX = "_hitbox";
     private static final Pattern FLOOR_PATTERN = Pattern.compile("floor\\d+");
+
+    /** Name of the unit that groups everything that is not a floor or a hitbox. */
+    private static final String SHELL_UNIT_NAME = "shell";
 
     /** Alpha for a floor that is dimmed because another floor is hovered. */
     private static final float DIM_ALPHA = 0.15f;
@@ -46,7 +59,7 @@ public final class RoomMaterialManager {
     private static final Color HIGHLIGHT_COLOR = new Color(0x2f6db2);
 
     /** Exponential approach rate of the animated opacity and color, 1/s. */
-    private static final float ANIMATION_RATE = 10f;
+    private static final float ANIMATION_RATE = 1f;
     /** Remaining difference below which an animated value snaps to its target. */
     private static final float ANIMATION_EPSILON = 0.004f;
 
@@ -79,8 +92,7 @@ public final class RoomMaterialManager {
         Unit(String name, boolean hitbox) {
             this.name = name;
             this.hitbox = hitbox;
-            // At rest a hitbox shows its original (invisible) material, so its
-            // neutral alpha is 0 rather than 1.
+            // A resting hitbox renders nothing at all, so its neutral alpha is 0.
             alpha = hitbox ? HIDDEN_ALPHA : 1f;
             targetAlpha = alpha;
         }
@@ -90,7 +102,8 @@ public final class RoomMaterialManager {
 
     /**
      * Builds the manager from the root nodes of a model instance. The nodes are
-     * classified into floor units, a campus (shell) unit and per-hitbox units.
+     * classified into floor units, a shell unit and per-hitbox units; hitbox
+     * parts start disabled so they never render unless highlighted.
      *
      * @param instance the building model, not null
      */
@@ -190,30 +203,70 @@ public final class RoomMaterialManager {
                 unit.highlight = unit.targetHighlight;
                 unit.animating = false;
             }
-            if (!unit.animating && isRestNormal(unit)) {
+            if (!unit.animating && !unit.hitbox && isRestNormal(unit)) {
                 restoreOriginals(unit);
             } else {
                 writeAnimatedState(unit);
+                if (!unit.animating && unit.targetAlpha <= 0f && unit.alpha <= 0f) {
+                    // Invisible and staying that way: take it out of rendering.
+                    setPartsEnabled(unit, false);
+                }
             }
         }
     }
 
-    // --- internal ------------------------------------------------------------
+    // --- unit collection -----------------------------------------------------
 
     private void collectUnits(Array<Node> roots) {
-        for (Node root : roots) {
-            if (isFloor(root.id)) {
-                Unit unit = new Unit(root.id, false);
-                collectNodeParts(root, unit);
-                units.add(unit);
-            } else {
-                // Shell (main_campus) and any other root-level geometry / edges.
-                Unit unit = new Unit(root.id, false);
-                collectNodeParts(root, unit);
-                units.add(unit);
+        collectFloorUnits(roots);
+        collectShellUnit(roots);
+        collectHitboxUnits(roots);
+        // Hitboxes pick rooms but must never render on their own: their GLB
+        // materials can be fully opaque, so visibility is the enabled flag.
+        for (Unit unit : units) {
+            if (unit.hitbox) {
+                setPartsEnabled(unit, false);
             }
         }
-        collectHitboxUnits(roots);
+    }
+
+    /** Creates a unit per floor container node, wherever it sits in the tree. */
+    private void collectFloorUnits(Iterable<Node> nodes) {
+        for (Node node : nodes) {
+            if (isFloor(node.id)) {
+                Unit unit = new Unit(node.id, false);
+                collectNodeParts(node, unit);
+                units.add(unit);
+                // The floor subtree is owned by this unit; do not descend further.
+            } else if (node.hasChildren()) {
+                collectFloorUnits(node.getChildren());
+            }
+        }
+    }
+
+    /** Groups every part that belongs neither to a floor nor to a hitbox. */
+    private void collectShellUnit(Iterable<Node> nodes) {
+        Unit unit = new Unit(SHELL_UNIT_NAME, false);
+        collectShellParts(nodes, unit);
+        if (unit.parts.size > 0) {
+            units.add(unit);
+        }
+    }
+
+    private void collectShellParts(Iterable<Node> nodes, Unit unit) {
+        for (Node node : nodes) {
+            if (isFloor(node.id)) {
+                continue; // owned by the floor unit
+            }
+            if (!isHitbox(node.id)) {
+                for (NodePart part : node.parts) {
+                    takePart(part, unit);
+                }
+            }
+            if (node.hasChildren()) {
+                collectShellParts(node.getChildren(), unit);
+            }
+        }
     }
 
     private void collectHitboxUnits(Iterable<Node> nodes) {
@@ -231,20 +284,11 @@ public final class RoomMaterialManager {
 
     /**
      * Adds every part of a node subtree to a unit, skipping hitbox subtrees
-     * (which are owned by their own units) and giving each part a private material
-     * copy so state changes never leak.
+     * (which are owned by their own units).
      */
     private void collectNodeParts(Node node, Unit unit) {
         for (NodePart part : node.parts) {
-            if (part.material == null) {
-                continue;
-            }
-            part.material = new Material(part.material);
-            unit.parts.add(part);
-            unit.originals.add(new Material(part.material));
-            ColorAttribute colorAttribute = (ColorAttribute) part.material.get(PBRColorAttribute.BaseColorFactor);
-            Color base = colorAttribute != null ? colorAttribute.color : null;
-            unit.baseColors.add(base != null ? new Color(base) : new Color(1f, 1f, 1f, 1f));
+            takePart(part, unit);
         }
         for (Node child : node.getChildren()) {
             if (isHitbox(child.id)) {
@@ -253,6 +297,24 @@ public final class RoomMaterialManager {
             collectNodeParts(child, unit);
         }
     }
+
+    /**
+     * Adds a part to a unit and gives it a private material copy so state
+     * changes never leak into the model or other instances.
+     */
+    private void takePart(NodePart part, Unit unit) {
+        if (part.material == null) {
+            return;
+        }
+        part.material = new Material(part.material);
+        unit.parts.add(part);
+        unit.originals.add(new Material(part.material));
+        ColorAttribute colorAttribute = (ColorAttribute) part.material.get(PBRColorAttribute.BaseColorFactor);
+        Color base = colorAttribute != null ? colorAttribute.color : null;
+        unit.baseColors.add(base != null ? new Color(base) : new Color(1f, 1f, 1f, 1f));
+    }
+
+    // --- state animation -----------------------------------------------------
 
     /**
      * Sets the target values of the animated parameters for a state and starts
@@ -281,6 +343,10 @@ public final class RoomMaterialManager {
         unit.targetAlpha = alpha;
         unit.targetDim = dim;
         unit.targetHighlight = highlight;
+        if (alpha > 0f || highlight > 0f) {
+            // A visible target must render while the animation approaches it.
+            setPartsEnabled(unit, true);
+        }
         unit.animating = true;
     }
 
@@ -294,7 +360,9 @@ public final class RoomMaterialManager {
     /** Swaps every part back to a pristine copy of its original material. */
     private void restoreOriginals(Unit unit) {
         for (int i = 0; i < unit.parts.size; i++) {
-            unit.parts.get(i).material = new Material(unit.originals.get(i));
+            NodePart part = unit.parts.get(i);
+            part.material = new Material(unit.originals.get(i));
+            part.enabled = true;
         }
     }
 
@@ -313,6 +381,9 @@ public final class RoomMaterialManager {
                 lerp(base.b * unit.dim, HIGHLIGHT_COLOR.b, unit.highlight),
                 1f);
             ((BlendingAttribute) material.get(BlendingAttribute.Type)).opacity = unit.alpha;
+            // A translucent surface must not write depth, or it occludes the
+            // geometry behind it; a fully opaque one keeps the depth writes.
+            ((DepthTestAttribute) material.get(DepthTestAttribute.Type)).depthMask = unit.alpha >= 1f;
         }
     }
 
@@ -330,10 +401,17 @@ public final class RoomMaterialManager {
             material = new Material(unit.originals.get(index));
             material.set(PBRColorAttribute.createBaseColorFactor(new Color(unit.baseColors.get(index))));
             material.set(new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, unit.alpha));
+            material.set(new DepthTestAttribute(GL20.GL_LEQUAL, true));
             unit.animated.add(material);
         }
         unit.parts.get(index).material = material;
         return material;
+    }
+
+    private void setPartsEnabled(Unit unit, boolean enabled) {
+        for (int i = 0; i < unit.parts.size; i++) {
+            unit.parts.get(i).enabled = enabled;
+        }
     }
 
     private static float lerp(float from, float to, float t) {

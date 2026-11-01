@@ -47,15 +47,7 @@ public final class EdgeHighlighter {
         // be recolored when no solid part uses the same material.
         ObjectSet<Material> solidMaterials = new ObjectSet<>();
 
-        for (Node node : instance.nodes) {
-            for (NodePart part : node.parts) {
-                if (isLine(part.meshPart.primitiveType)) {
-                    lineParts.add(part);
-                } else {
-                    solidMaterials.add(part.material);
-                }
-            }
-        }
+        collectParts(instance.nodes, lineParts, solidMaterials);
 
         int recolored = 0;
         for (NodePart part : lineParts) {
@@ -82,11 +74,44 @@ public final class EdgeHighlighter {
         }
         int count = 0;
         for (Node node : instance.nodes) {
+            count += countLineParts(node);
+        }
+        return count;
+    }
+
+    /**
+     * Splits every part of the node subtree into line parts and materials of
+     * solid parts. The hierarchy nests meshes below wrapper nodes, so the whole
+     * tree has to be walked.
+     */
+    private static void collectParts(Iterable<Node> nodes, Array<NodePart> lineParts,
+                                     ObjectSet<Material> solidMaterials) {
+        for (Node node : nodes) {
             for (NodePart part : node.parts) {
+                if (part.meshPart == null) {
+                    continue;
+                }
                 if (isLine(part.meshPart.primitiveType)) {
-                    count++;
+                    lineParts.add(part);
+                } else {
+                    solidMaterials.add(part.material);
                 }
             }
+            if (node.hasChildren()) {
+                collectParts(node.getChildren(), lineParts, solidMaterials);
+            }
+        }
+    }
+
+    private static int countLineParts(Node node) {
+        int count = 0;
+        for (NodePart part : node.parts) {
+            if (part.meshPart != null && isLine(part.meshPart.primitiveType)) {
+                count++;
+            }
+        }
+        for (Node child : node.getChildren()) {
+            count += countLineParts(child);
         }
         return count;
     }

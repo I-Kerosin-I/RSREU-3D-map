@@ -1,6 +1,8 @@
 package org.rsreu.map.input;
 
+import com.badlogic.gdx.graphics.g3d.model.MeshPart;
 import com.badlogic.gdx.graphics.g3d.model.Node;
+import com.badlogic.gdx.graphics.g3d.model.NodePart;
 import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.BoundingBox;
@@ -16,6 +18,12 @@ import java.util.regex.Pattern;
  * <p>
  * The hitbox nodes are children of the floor container nodes, so a hit yields
  * both the room (from the hitbox name) and the floor (from the parent node).
+ * <p>
+ * The world bounds of every hitbox are computed once at construction time from
+ * the mesh data and the node transform. {@link Node#calculateBoundingBox} can
+ * not be used here: it skips node parts whose {@code enabled} flag is cleared,
+ * and the material manager disables hitbox parts to keep them out of rendering.
+ * The model is static, so the cached bounds stay valid for its lifetime.
  */
 public final class RoomPicker {
 
@@ -24,8 +32,9 @@ public final class RoomPicker {
 
     private final Array<Node> hitboxes = new Array<>();
     private final ObjectMap<String, String> parentFloor = new ObjectMap<>();
+    private final ObjectMap<String, BoundingBox> worldBounds = new ObjectMap<>();
 
-    private final BoundingBox bounds = new BoundingBox();
+    private final BoundingBox meshBounds = new BoundingBox();
     private final Vector3 intersection = new Vector3();
 
     /**
@@ -48,8 +57,10 @@ public final class RoomPicker {
         String best = null;
         float bestDistance = Float.MAX_VALUE;
         for (Node hitbox : hitboxes) {
-            hitbox.calculateWorldTransform();
-            hitbox.calculateBoundingBox(bounds, true);
+            BoundingBox bounds = worldBounds.get(hitbox.id);
+            if (bounds == null) {
+                continue;
+            }
             if (Intersector.intersectRayBounds(ray, bounds, intersection)) {
                 float distance = ray.origin.dst2(intersection);
                 if (distance < bestDistance) {
@@ -90,11 +101,30 @@ public final class RoomPicker {
             if (isHitbox(node.id)) {
                 hitboxes.add(node);
                 parentFloor.put(node.id, nodeFloor);
+                worldBounds.put(node.id, computeWorldBounds(node));
             }
             if (node.hasChildren()) {
                 collect(node.getChildren(), nodeFloor);
             }
         }
+    }
+
+    /**
+     * Computes the world-space bounds of a node's mesh parts directly from the
+     * mesh data, bypassing {@link Node#extendBoundingBox}, which ignores parts
+     * with a cleared {@code enabled} flag.
+     */
+    private BoundingBox computeWorldBounds(Node node) {
+        node.calculateWorldTransform();
+        BoundingBox out = new BoundingBox().inf();
+        for (NodePart part : node.parts) {
+            MeshPart meshPart = part.meshPart;
+            if (meshPart != null && meshPart.mesh != null) {
+                meshPart.mesh.extendBoundingBox(out, meshPart.offset, meshPart.size,
+                    node.globalTransform);
+            }
+        }
+        return out;
     }
 
     private static boolean isFloor(String name) {

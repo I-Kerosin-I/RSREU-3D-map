@@ -32,26 +32,30 @@ Interactive 3D navigation map of RSREU buildings.
 
 ### glTF Node Naming Convention
 
-The model has a **floor-based hierarchy**:
+The model has a **floor-based hierarchy** nested below wrapper nodes (`Scene Collection` → `Main`), so floor containers must be discovered recursively:
 
 ```
-Scene
+Scene Collection
  └── Main
-      ├── Building_Edges.main_campus   ← wireframe overlay
+      ├── main                          ← outer building shell (mesh)
+      ├── main_Edges                    ← shell wireframe overlay (lines)
       ├── floor1
+      │    └── floor1                   ← walls + floor slab, one mesh
       ├── floor2
       │    ├── Building_Edges.floor2_walls
-      │    ├── floor2                   ← floor mesh
-      │    ├── main_room_210_hitbox     ← INVISIBLE hitbox
-      │    └── floor2_walls             ← solid walls for the floor
+      │    ├── floor2                   ← floor slab
+      │    ├── floor2_walls             ← solid walls for the floor
+      │    └── main_room_210_hitbox     ← hitbox
       ├── floor3
-      ├── floor4
-      └── main_campus                   ← outer building shell
+      │    ├── floor3                   ← walls + floor slab, one mesh
+      │    └── main_room_3XX_hitbox     ← ~70 hitboxes
+      └── floor4
+           └── floor4
 ```
 
-- Floor node names: `floor1`, `floor2`, ... — contain all geometry for that floor
-- Hitbox node names: `*_hitbox` suffix (e.g., `main_room_210_hitbox`) — invisible cubes for ray picking, child of floor node
-- Edge node names: `Building_Edges.*` — line meshes for accent wireframe overlay
+- Floor node names: `floor1`, `floor2`, ... — container nodes own all geometry of that floor (walls + slab may be a single mesh named like the container)
+- Hitbox node names: `*_hitbox` suffix (e.g., `main_room_210_hitbox`) — cubes for ray picking, children of the floor node. Their GLB materials are **opaque**; the code keeps them out of rendering via `NodePart.enabled = false` except the highlighted one
+- Edge node names: `Building_Edges.*` / `*_Edges` — line meshes for accent wireframe overlay
 - Room ID format: `department_roomNumber` (e.g., `main_room_210`, `evm_room_201a`)
 
 ## Floor Isolation and Room Interaction
@@ -82,25 +86,27 @@ Scene
 ### Ray Picking
 
 1. `camera.getPickRay(screenX, screenY)` → libGDX `Ray`
-2. Iterate all nodes in `ModelInstance`
-3. Filter: `node.name.endsWith("_hitbox")`
-4. `node.calculateWorldTransform(); node.calculateBoundingBox(box, true)`
-5. `Intersector.intersectRayBounds(ray, box, hit)` → closest hit
-6. Hitbox parent = floor node → floor ID
-7. Strip `_hitbox` suffix from hitbox name → room ID
+2. `RoomPicker` collected all `*_hitbox` nodes recursively at construction; each one's world-space AABB was computed once from the mesh data and `node.globalTransform` (`Mesh.extendBoundingBox` with the mesh part range — **not** `Node.calculateBoundingBox`, which skips parts with `enabled = false`, and the hitbox parts are disabled for rendering)
+3. `Intersector.intersectRayBounds(ray, cachedBox, hit)` → closest hit
+4. Hitbox parent = floor node → floor ID
+5. Strip `_hitbox` suffix from hitbox name → room ID
+6. While a floor is locked, hitboxes of other floors are ignored (no highlight, no clicks)
 
 ### Material Management
 
-Each floor node (walls, floor, hitboxes inside) gets material modifications:
+Units are classified recursively: each `floorN` container node (wherever it sits in the tree) becomes a floor unit owning its subtree except hitboxes; all remaining geometry (shell, its wireframe) forms one shell unit; every hitbox is its own unit.
 
 | State | Blending | Color | Depth Write |
 |-------|----------|-------|-------------|
 | Normal | none | original | yes |
-| Dimmed (hover, other floor) | SRC_ALPHA / ONE_MINUS_SRC_ALPHA, α=0.15 | darkened ×0.3 | no |
-| Hidden (click, other floor) | α=0 → effectively invisible | — | no |
+| Dimmed (hover, other floor) | SRC_ALPHA / ONE_MINUS_SRC_ALPHA, α=0.15 | darkened ×0.3 | no (`DepthTestAttribute` mask follows opacity) |
+| Hidden (click, other floor) | α=0, parts removed from render after the fade | — | no |
 | Hitbox highlighted | SRC_ALPHA / ONE_MINUS_SRC_ALPHA, α=0.6 | accent color | no |
+| Hitbox normal | not rendered (`NodePart.enabled = false`) | — | — |
 
-State changes do not snap: every unit animates its alpha / dim / highlight amount exponentially towards the target (≈0.25 s), advanced by `RoomMaterialManager.update(deltaTime)` from `MapGame.render()`. Once a unit settles back in the Normal state, its original material is restored.
+Translucent surfaces never write depth (`DepthTestAttribute.depthMask = alpha >= 1`), otherwise the dimmed shell would occlude the floors inside it. Fully invisible units (hidden floors, non-highlighted hitboxes) are removed from rendering via `NodePart.enabled = false` once their fade-out settles.
+
+State changes do not snap: every unit animates its alpha / dim / highlight amount exponentially towards the target (≈0.25 s), advanced by `RoomMaterialManager.update(deltaTime)` from `MapGame.render()`. Once a non-hitbox unit settles back in the Normal state, its original material is restored.
 
 `BlendingAttribute` + `PBRColorAttribute.createBaseColorFactor` are set per-node via mutable `NodePart` materials. Materials are private copies per `ModelInstance`, so changes don't leak.
 

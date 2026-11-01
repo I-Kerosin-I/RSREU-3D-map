@@ -30,15 +30,16 @@ public final class RoomHighlighter {
     }
 
     /**
-     * Called on mouse movement. Before a selection is locked it updates the floor
-     * isolation; afterwards it only updates the hovered room highlight.
+     * Called on mouse movement. Updates the floor isolation and the accent
+     * highlight of the room under the cursor; after a floor is selected the
+     * cursor only controls the highlight.
      */
     public void onMouseMoved(int screenX, int screenY) {
         if (camera == null) {
             return;
         }
         camera.update();
-        String hitbox = picker.pick(camera.getPickRay(screenX, screenY));
+        String hitbox = pickVisibleHitbox(camera.getPickRay(screenX, screenY));
 
         if (lockedFloor == null) {
             String floor = hitbox == null ? null : picker.floorOf(hitbox);
@@ -47,6 +48,17 @@ public final class RoomHighlighter {
                 materials.resetAll();
                 if (floor != null) {
                     materials.applyHover(floor);
+                }
+            }
+            // The accent highlight follows the cursor in the normal state too:
+            // resetAll above cleared it whenever the floor changed.
+            if (!java.util.Objects.equals(hitbox, hoveredHitbox)) {
+                if (hoveredHitbox != null) {
+                    materials.setHitboxHighlighted(hoveredHitbox, false);
+                }
+                hoveredHitbox = hitbox;
+                if (hitbox != null) {
+                    materials.setHitboxHighlighted(hitbox, true);
                 }
             }
         } else {
@@ -71,12 +83,10 @@ public final class RoomHighlighter {
             return;
         }
         camera.update();
-        String hitbox = picker.pick(camera.getPickRay(screenX, screenY));
-        System.out.println("RoomHighlighter.onClick: hitbox=" + hitbox);
+        String hitbox = pickVisibleHitbox(camera.getPickRay(screenX, screenY));
 
         if (hitbox != null) {
             String floor = picker.floorOf(hitbox);
-            System.out.println("RoomHighlighter.onClick: floor=" + floor);
             if (floor != null) {
                 materials.resetAll();
                 materials.selectFloor(floor);
@@ -87,6 +97,20 @@ public final class RoomHighlighter {
         } else {
             clearSelection();
         }
+    }
+
+    /**
+     * Picks the hitbox under the ray, ignoring rooms of floors the user can not
+     * currently see: while a floor is locked, hitboxes of the hidden floors must
+     * neither highlight nor react to clicks.
+     */
+    private String pickVisibleHitbox(Ray ray) {
+        String hitbox = picker.pick(ray);
+        if (hitbox != null && lockedFloor != null
+            && !java.util.Objects.equals(picker.floorOf(hitbox), lockedFloor)) {
+            return null;
+        }
+        return hitbox;
     }
 
     /**
