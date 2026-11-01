@@ -59,7 +59,7 @@ public final class RoomMaterialManager {
     private static final Color HIGHLIGHT_COLOR = new Color(0x2f6db2);
 
     /** Exponential approach rate of the animated opacity and color, 1/s. */
-    private static final float ANIMATION_RATE = 1f;
+    private static final float ANIMATION_RATE = 1000f;
     /** Remaining difference below which an animated value snaps to its target. */
     private static final float ANIMATION_EPSILON = 0.004f;
 
@@ -100,14 +100,22 @@ public final class RoomMaterialManager {
 
     private final Array<Unit> units = new Array<>();
 
+    /** Layer sorter the working materials are registered with, may be null. */
+    private final BuildingRenderableSorter sorter;
+    /** The unit that owns the outer shell geometry and wireframe. */
+    private Unit shellUnit;
+
     /**
      * Builds the manager from the root nodes of a model instance. The nodes are
      * classified into floor units, a shell unit and per-hitbox units; hitbox
      * parts start disabled so they never render unless highlighted.
      *
      * @param instance the building model, not null
+     * @param sorter   the renderable sorter whose shell / overlay layers the
+     *                 working materials are registered with, may be null
      */
-    public RoomMaterialManager(ModelInstance instance) {
+    public RoomMaterialManager(ModelInstance instance, BuildingRenderableSorter sorter) {
+        this.sorter = sorter;
         collectUnits(instance.nodes);
     }
 
@@ -249,6 +257,7 @@ public final class RoomMaterialManager {
         Unit unit = new Unit(SHELL_UNIT_NAME, false);
         collectShellParts(nodes, unit);
         if (unit.parts.size > 0) {
+            shellUnit = unit;
             units.add(unit);
         }
     }
@@ -392,6 +401,12 @@ public final class RoomMaterialManager {
      * material, creating the working copy from the original snapshot on first
      * use. Fresh attribute instances replace the shared ones, because the
      * working material is mutated in place every frame.
+     * <p>
+     * Hitbox materials depth-test with {@code GL_ALWAYS}: the highlight is an
+     * x-ray marker that must stay visible inside the opaque hovered floor.
+     * Shell materials are registered with the sorter's shell layer so the shell
+     * always composites over the interior, and hitbox materials with the
+     * overlay layer so the marker draws after everything.
      */
     private Material animatedMaterial(Unit unit, int index) {
         Material material;
@@ -401,8 +416,16 @@ public final class RoomMaterialManager {
             material = new Material(unit.originals.get(index));
             material.set(PBRColorAttribute.createBaseColorFactor(new Color(unit.baseColors.get(index))));
             material.set(new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, unit.alpha));
-            material.set(new DepthTestAttribute(GL20.GL_LEQUAL, true));
+            material.set(new DepthTestAttribute(
+                unit.hitbox ? GL20.GL_ALWAYS : GL20.GL_LEQUAL, false));
             unit.animated.add(material);
+            if (sorter != null) {
+                if (unit.hitbox) {
+                    sorter.overlayMaterials().put(material, 2);
+                } else if (unit == shellUnit) {
+                    sorter.shellMaterials().put(material, 1);
+                }
+            }
         }
         unit.parts.get(index).material = material;
         return material;

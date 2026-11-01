@@ -9,8 +9,10 @@ import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.BufferUtils;
 import net.mgsx.gltf.scene3d.scene.Scene;
 import net.mgsx.gltf.scene3d.scene.SceneManager;
+import net.mgsx.gltf.scene3d.shaders.PBRShaderProvider;
 import org.rsreu.map.input.CameraInputController;
 import org.rsreu.map.input.RoomPicker;
+import org.rsreu.map.render.BuildingRenderableSorter;
 import org.rsreu.map.render.EdgeHighlighter;
 import org.rsreu.map.render.RoomHighlighter;
 import org.rsreu.map.render.RoomMaterialManager;
@@ -48,6 +50,8 @@ public class MapGame extends ApplicationAdapter {
     private PerspectiveCamera camera;
     private CameraInputController cameraController;
     private SceneManager sceneManager;
+    /** Layered transparency order for the building units. */
+    private BuildingRenderableSorter renderSorter;
 
     private SceneLoader sceneLoader;
     private Array<Scene> loadedScenes;
@@ -71,8 +75,11 @@ public class MapGame extends ApplicationAdapter {
         cameraController.setCamera(camera);
         Gdx.input.setInputProcessor(cameraController);
 
-        // Set up SceneManager with PBR rendering
-        sceneManager = new SceneManager();
+        // Set up SceneManager with PBR rendering and the layered transparency
+        // sorter (the shell must composite over the interior it encloses).
+        renderSorter = new BuildingRenderableSorter();
+        sceneManager = new SceneManager(
+            PBRShaderProvider.createDefault(24), PBRShaderProvider.createDefaultDepth(24), renderSorter);
         sceneManager.setCamera(camera);
 
         // Set ambient light
@@ -133,7 +140,7 @@ private void logFramebuffer() {
             styleEdges(scene);
 
             // Interactive floor isolation / room highlighting.
-            roomMaterials = new RoomMaterialManager(scene.modelInstance);
+            roomMaterials = new RoomMaterialManager(scene.modelInstance, renderSorter);
             RoomPicker roomPicker = new RoomPicker(scene.modelInstance.nodes);
             RoomHighlighter roomHighlighter = new RoomHighlighter(camera, roomPicker, roomMaterials);
             cameraController.setRoomHighlighter(roomHighlighter);

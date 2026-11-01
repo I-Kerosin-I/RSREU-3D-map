@@ -106,7 +106,18 @@ Units are classified recursively: each `floorN` container node (wherever it sits
 
 Translucent surfaces never write depth (`DepthTestAttribute.depthMask = alpha >= 1`), otherwise the dimmed shell would occlude the floors inside it. Fully invisible units (hidden floors, non-highlighted hitboxes) are removed from rendering via `NodePart.enabled = false` once their fade-out settles.
 
-State changes do not snap: every unit animates its alpha / dim / highlight amount exponentially towards the target (≈0.25 s), advanced by `RoomMaterialManager.update(deltaTime)` from `MapGame.render()`. Once a non-hitbox unit settles back in the Normal state, its original material is restored.
+### Transparency ordering
+
+Default distance sorting breaks for nested geometry: the shell mesh's sorting center is the building centroid, so interior pieces on the camera side sort as closer and composite on top of the shell — interiors shine through at full strength while it fades in, then pop away when the original opaque material is restored. `BuildingRenderableSorter` (passed to `SceneManager` in `MapGame.create()`) enforces a fixed layer order instead:
+
+1. opaque geometry (front to back, depth written);
+2. building body layers — floors, dimmed shell copies — back to front;
+3. the outer shell, always last over the interior it encloses;
+4. the highlighted hitbox, an x-ray marker drawn with `GL_ALWAYS` depth test.
+
+`RoomMaterialManager` registers every working material it hands out for the shell unit into `sorter.shellMaterials()` and for hitbox units into `sorter.overlayMaterials()` — both are `IdentityHashMap`s keyed by object identity, because `Material.equals` compares attribute *values*, which the manager mutates every frame, so hash-based collections silently misbehave here. With this order the composite is continuous all the way to alpha = 1 (blending with α=1 equals opaque rendering), so fades need no snapping.
+
+State changes do not snap: every unit animates its alpha / dim / highlight amount exponentially towards the target, advanced by `RoomMaterialManager.update(deltaTime)` from `MapGame.render()`. Once a non-hitbox unit settles back in the Normal state, its original material is restored — pixel-identical to the last blended frame.
 
 `BlendingAttribute` + `PBRColorAttribute.createBaseColorFactor` are set per-node via mutable `NodePart` materials. Materials are private copies per `ModelInstance`, so changes don't leak.
 
