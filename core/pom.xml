@@ -42,6 +42,10 @@
             <artifactId>gdx-platform</artifactId>
             <classifier>natives-desktop</classifier>
         </dependency>
+        <dependency>
+            <groupId>com.badlogicgames.gdx</groupId>
+            <artifactId>gdx-freetype</artifactId>
+        </dependency>
         <!-- Source: https://mvnrepository.com/artifact/com.github.mgsx-dev.gdx-gltf/gltf -->
         <dependency>
             <groupId>com.github.mgsx-dev.gdx-gltf</groupId>

@@ -114,6 +114,45 @@ public final class RoomHighlighter {
     }
 
     /**
+     * The hitbox node name currently accent-highlighted, or {@code null}. Read by
+     * the UI layer to show the hover tooltip for the room under the cursor.
+     */
+    public String hoveredHitbox() {
+        return hoveredHitbox;
+    }
+
+    /**
+     * The locked (selected) floor node name, or {@code null} when no floor is
+     * selected.
+     */
+    public String lockedFloor() {
+        return lockedFloor;
+    }
+
+    /**
+     * Selects a room programmatically (from search results or the category tree):
+     * locks its floor and keeps the room accent-highlighted, exactly the state a
+     * click on the room would produce.
+     *
+     * @param hitboxNodeName node name of the room's hitbox
+     */
+    public void selectRoom(String hitboxNodeName) {
+        if (hitboxNodeName == null) {
+            return;
+        }
+        String floor = picker.floorOf(hitboxNodeName);
+        if (floor == null) {
+            return;
+        }
+        materials.resetAll();
+        materials.selectFloor(floor);
+        lockedFloor = floor;
+        hoveredFloor = null;
+        hoveredHitbox = hitboxNodeName;
+        materials.setHitboxHighlighted(hitboxNodeName, true);
+    }
+
+    /**
      * Returns to the normal state: every floor fully opaque, no highlights.
      */
     public void clearSelection() {

@@ -10,6 +10,8 @@ import com.badlogic.gdx.math.collision.Ray;
 import com.badlogic.gdx.utils.TimeUtils;
 import org.rsreu.map.render.RoomHighlighter;
 
+import java.util.function.BooleanSupplier;
+
 /**
  * Orbit camera controller.
  *
@@ -52,6 +54,8 @@ public class CameraInputController extends InputAdapter {
     private static final float PAN_DECAY = 4.5f;
     /** Rate at which the orbit distance approaches the zoom target, 1/s. */
     private static final float ZOOM_RATE = 9f;
+    /** Rate at which the orbit pivot approaches the fly-to target, 1/s. */
+    private static final float FLY_RATE = 5f;
     /** Rate at which the WASD velocity approaches the pressed-key target, 1/s. */
     private static final float KEY_RATE = 9f;
     /** A release after this much pointer idle does not glide, in seconds. */
@@ -60,6 +64,7 @@ public class CameraInputController extends InputAdapter {
     private static final float ORBIT_VELOCITY_EPSILON = 1f;   // degrees per second
     private static final float PAN_VELOCITY_EPSILON = 0.05f;  // world units per second
     private static final float ZOOM_EPSILON = 0.005f;         // world units
+    private static final float FLY_EPSILON = 0.01f;           // world units
 
     private static final float NANOS_TO_SECONDS = 1e-9f;
 
@@ -72,6 +77,11 @@ public class CameraInputController extends InputAdapter {
     /** Zoom target the orbit distance smoothly approaches. */
     private float targetOrbitDistance = 5f;
 
+    /** Whether the pivot is smoothly approaching the fly-to target. */
+    private boolean flying;
+    /** World-space point the pivot approaches while {@link #flying}. */
+    private final Vector3 flyTarget = new Vector3();
+
     private static final Vector3 LOCAL_FORWARD = new Vector3(0f, 0f, -1f);
     private static final Vector3 LOCAL_UP = new Vector3(0f, 1f, 0f);
     private static final Vector3 LOCAL_RIGHT = new Vector3(1f, 0f, 0f);
@@ -80,6 +90,9 @@ public class CameraInputController extends InputAdapter {
 
     /** Optional room interaction controller, wired by the game. */
     private RoomHighlighter roomHighlighter;
+
+    /** Reports whether the UI currently claims the keyboard (text field focus). */
+    private BooleanSupplier keyboardBlocked = () -> false;
 
     private float dragMovedSq;
 
@@ -135,6 +148,34 @@ public class CameraInputController extends InputAdapter {
     }
 
     /**
+     * Wires a predicate that reports whether keyboard input is currently claimed
+     * by the UI (e.g. the search text field has focus). While it yields
+     * {@code true}, WASD keys are not forwarded to camera movement.
+     */
+    public void setKeyboardBlockedSupplier(BooleanSupplier blocked) {
+        this.keyboardBlocked = blocked == null ? () -> false : blocked;
+    }
+
+    /**
+     * Smoothly moves the orbit pivot to the target point, e.g. the center of a
+     * room selected through the UI, and eases the orbit distance to the desired
+     * value. The viewing direction is preserved. Any camera grab (mouse press)
+     * or WASD movement cancels the flight.
+     *
+     * @param worldTarget          world-space point the camera should look at
+     * @param desiredOrbitDistance orbit distance to settle at, clamped to the
+     *                             zoom limits
+     */
+    public void flyTo(Vector3 worldTarget, float desiredOrbitDistance) {
+        if (worldTarget == null) {
+            return;
+        }
+        flyTarget.set(worldTarget);
+        flying = true;
+        targetOrbitDistance = clamp(desiredOrbitDistance, MIN_ORBIT_DISTANCE, MAX_ORBIT_DISTANCE);
+    }
+
+    /**
      * Rebuilds the orientation quaternion from the current camera direction so the
      * controller always continues from the actual camera state.
      */
@@ -158,6 +199,7 @@ public class CameraInputController extends InputAdapter {
         yawVelocity = 0f;
         pitchVelocity = 0f;
         panVelocity.setZero();
+        flying = false;
 
         if (camera == null) {
             return false;
@@ -374,18 +416,22 @@ public class CameraInputController extends InputAdapter {
                 yield true;
             }
             case Input.Keys.W -> {
+                if (keyboardBlocked.getAsBoolean()) yield true;
                 keyW = true;
                 yield true;
             }
             case Input.Keys.A -> {
+                if (keyboardBlocked.getAsBoolean()) yield true;
                 keyA = true;
                 yield true;
             }
             case Input.Keys.S -> {
+                if (keyboardBlocked.getAsBoolean()) yield true;
                 keyS = true;
                 yield true;
             }
             case Input.Keys.D -> {
+                if (keyboardBlocked.getAsBoolean()) yield true;
                 keyD = true;
                 yield true;
             }
@@ -425,9 +471,28 @@ public class CameraInputController extends InputAdapter {
         if (delta <= 0f) {
             return;
         }
+        if (keyW || keyA || keyS || keyD) {
+            flying = false;
+        }
         updateKeyboardMove(delta);
         updateInertia(delta);
         updateZoom(delta);
+        updateFly(delta);
+    }
+
+    /**
+     * Moves the camera and the pivot towards the fly-to target, preserving the
+     * viewing direction, until the pivot settles on it.
+     */
+    private void updateFly(float delta) {
+        if (!flying) {
+            return;
+        }
+        tmpMove.set(flyTarget).sub(pivot).scl(1f - (float) Math.exp(-FLY_RATE * delta));
+        moveCameraAndPivot(tmpMove);
+        if (tmpMove.len() < FLY_EPSILON) {
+            flying = false;
+        }
     }
 
     /**

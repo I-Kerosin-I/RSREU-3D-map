@@ -13,7 +13,10 @@ public record Space(
     FloorId floorId,
     SpaceType type,
     String modelNodeName,
-    Bounds3 bounds
+    Bounds3 bounds,
+    String description,
+    String category,
+    String subcategory
 ) {
 
     public Space {
@@ -27,5 +30,14 @@ public record Space(
             throw new IllegalArgumentException("Space modelNodeName cannot be null or blank");
         }
         if (bounds == null) throw new IllegalArgumentException("Space bounds cannot be null");
+        // description, category and subcategory are optional and may be null
+    }
+
+    /**
+     * Convenience constructor for spaces without the optional metadata.
+     */
+    public Space(RoomId id, String displayName, FloorId floorId, SpaceType type,
+                 String modelNodeName, Bounds3 bounds) {
+        this(id, displayName, floorId, type, modelNodeName, bounds, null, null, null);
     }
 }

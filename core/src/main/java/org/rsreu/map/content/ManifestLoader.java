@@ -9,6 +9,8 @@ import com.badlogic.gdx.utils.JsonValue;
  */
 public class ManifestLoader {
 
+    private static final String MANIFEST_PATH = "assets/manifest.json";
+
     private final JsonReader jsonReader;
 
     public ManifestLoader() {
@@ -23,7 +25,7 @@ public class ManifestLoader {
      */
     public JsonValue load() {
         try {
-            JsonValue root = jsonReader.parse(Gdx.files.internal("manifest.json"));
+            JsonValue root = jsonReader.parse(Gdx.files.internal(MANIFEST_PATH));
             Gdx.app.log("ManifestLoader", "Successfully loaded manifest.json");
             return root;
         } catch (Exception e) {
@@ -38,6 +40,6 @@ public class ManifestLoader {
      * @return true if manifest.json exists
      */
     public boolean manifestExists() {
-        return Gdx.files.internal("manifest.json").exists();
+        return Gdx.files.internal(MANIFEST_PATH).exists();
     }
 }

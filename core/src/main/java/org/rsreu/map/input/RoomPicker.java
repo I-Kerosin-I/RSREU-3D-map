@@ -83,6 +83,17 @@ public final class RoomPicker {
     }
 
     /**
+     * The world-space bounds of a hitbox cached at construction time, or
+     * {@code null} for an unknown node name. Used to aim the camera at a room
+     * selected through the UI.
+     *
+     * @param hitboxNodeName node name of the hitbox
+     */
+    public BoundingBox boundsOf(String hitboxNodeName) {
+        return hitboxNodeName == null ? null : worldBounds.get(hitboxNodeName);
+    }
+
+    /**
      * Strips the {@code _hitbox} suffix to recover the stable room identifier,
      * e.g. {@code "main_room_210"} from {@code "main_room_210_hitbox"}.
      *

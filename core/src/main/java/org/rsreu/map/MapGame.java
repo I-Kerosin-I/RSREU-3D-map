@@ -2,14 +2,26 @@ package org.rsreu.map;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.InputMultiplexer;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
+import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.math.collision.BoundingBox;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.BufferUtils;
+import com.badlogic.gdx.utils.JsonValue;
 import net.mgsx.gltf.scene3d.scene.Scene;
 import net.mgsx.gltf.scene3d.scene.SceneManager;
 import net.mgsx.gltf.scene3d.shaders.PBRShaderProvider;
+import org.rsreu.map.application.port.CampusRepository;
+import org.rsreu.map.application.usecase.FindRoomsUseCase;
+import org.rsreu.map.controller.MapController;
+import org.rsreu.map.content.InMemoryCampusRepository;
+import org.rsreu.map.content.ManifestLoader;
+import org.rsreu.map.content.ManifestParser;
+import org.rsreu.map.domain.campus.Campus;
+import org.rsreu.map.domain.campus.CategoryTaxonomy;
 import org.rsreu.map.input.CameraInputController;
 import org.rsreu.map.input.RoomPicker;
 import org.rsreu.map.render.BuildingRenderableSorter;
@@ -17,8 +29,11 @@ import org.rsreu.map.render.EdgeHighlighter;
 import org.rsreu.map.render.RoomHighlighter;
 import org.rsreu.map.render.RoomMaterialManager;
 import org.rsreu.map.render.SceneLoader;
+import org.rsreu.map.ui.MapHud;
+import org.rsreu.map.ui.UiTheme;
 
 import java.nio.IntBuffer;
+import java.util.List;
 
 /**
  * Main libGDX application for RSREU 3D Map.
@@ -59,6 +74,24 @@ public class MapGame extends ApplicationAdapter {
     /** Animates floor / room opacity transitions of the loaded scene. */
     private RoomMaterialManager roomMaterials;
 
+    /** Ray picking of the loaded scene's hitboxes; feeds the highlighter. */
+    private RoomPicker roomPicker;
+    /** Tracks the hovered room and the locked (selected) floor. */
+    private RoomHighlighter roomHighlighter;
+
+    /** Application state mediator shared by the UI and the 3D scene commands. */
+    private MapController mapController;
+
+    /** Category tree of the object browser, parsed together with the manifest. */
+    private CategoryTaxonomy taxonomy;
+
+    /** Scene2D overlay: side panel, search, category tree, hover tooltip. */
+    private UiTheme uiTheme;
+    private MapHud hud;
+
+    /** Orbit distance the camera settles at when flying to a selected room. */
+    private static final float FLY_ORBIT_DISTANCE = 4f;
+
     @Override
     public void create() {
         Gdx.app.log("MapGame", "Creating RSREU 3D Map application");
@@ -73,7 +106,6 @@ public class MapGame extends ApplicationAdapter {
         // Set up camera controller for mouse drag and WASD
         cameraController = new CameraInputController();
         cameraController.setCamera(camera);
-        Gdx.input.setInputProcessor(cameraController);
 
         // Set up SceneManager with PBR rendering and the layered transparency
         // sorter (the shell must composite over the interior it encloses).
@@ -99,7 +131,65 @@ public class MapGame extends ApplicationAdapter {
         // Load the campus model
         loadScene(MODEL_PATH);
 
+        // Application data and the UI ↔ 3D mediator
+        InMemoryCampusRepository repository = new InMemoryCampusRepository(loadCampus());
+        mapController = new MapController(new FindRoomsUseCase(repository), repository);
+        mapController.setMapActions(new MapController.MapActions() {
+            @Override
+            public void focusRoom(String hitboxNodeName) {
+                if (roomHighlighter != null) {
+                    roomHighlighter.selectRoom(hitboxNodeName);
+                }
+                flyCameraTo(hitboxNodeName);
+            }
+
+            @Override
+            public void clearFocus() {
+                if (roomHighlighter != null) {
+                    roomHighlighter.clearSelection();
+                }
+            }
+        });
+        mapController.setHoveredHitboxSupplier(
+            () -> roomHighlighter == null ? null : roomHighlighter.hoveredHitbox());
+
+        // UI overlay; the stage consumes input before the camera controller
+        uiTheme = new UiTheme();
+        hud = new MapHud(uiTheme, mapController, taxonomy);
+        cameraController.setKeyboardBlockedSupplier(hud::isTextFieldFocused);
+        Gdx.input.setInputProcessor(new InputMultiplexer(hud.getStage(), cameraController));
+
         Gdx.app.log("MapGame", "Application created successfully");
+    }
+
+    /**
+     * Parses manifest.json into the campus data. A missing or broken manifest
+     * degrades to an empty campus: the map still renders, the UI just has no
+     * metadata to show.
+     */
+    private Campus loadCampus() {
+        try {
+            JsonValue root = new ManifestLoader().load();
+            ManifestParser parser = new ManifestParser();
+            taxonomy = parser.parseCategories(root);
+            return parser.parse(root);
+        } catch (Exception e) {
+            Gdx.app.error("MapGame", "Manifest unavailable, continuing without room metadata: " + e.getMessage(), e);
+            taxonomy = CategoryTaxonomy.EMPTY;
+            return new Campus(List.of());
+        }
+    }
+
+    /** Aims the orbit camera at the center of the room's hitbox, if it is known. */
+    private void flyCameraTo(String hitboxNodeName) {
+        if (roomPicker == null || camera == null) {
+            return;
+        }
+        BoundingBox bounds = roomPicker.boundsOf(hitboxNodeName);
+        if (bounds == null) {
+            return;
+        }
+        cameraController.flyTo(bounds.getCenter(new Vector3()), FLY_ORBIT_DISTANCE);
     }
 
     /**
@@ -141,8 +231,8 @@ private void logFramebuffer() {
 
             // Interactive floor isolation / room highlighting.
             roomMaterials = new RoomMaterialManager(scene.modelInstance, renderSorter);
-            RoomPicker roomPicker = new RoomPicker(scene.modelInstance.nodes);
-            RoomHighlighter roomHighlighter = new RoomHighlighter(camera, roomPicker, roomMaterials);
+            roomPicker = new RoomPicker(scene.modelInstance.nodes);
+            roomHighlighter = new RoomHighlighter(camera, roomPicker, roomMaterials);
             cameraController.setRoomHighlighter(roomHighlighter);
         } catch (Exception e) {
             Gdx.app.error("MapGame", "Could not load " + modelPath + ": " + e.getMessage(), e);
@@ -194,6 +284,11 @@ private void logFramebuffer() {
         sceneManager.render();
 
         Gdx.gl.glDisable(GL20.GL_POLYGON_OFFSET_FILL);
+
+        // UI overlay on top of the 3D scene
+        if (hud != null) {
+            hud.actAndDraw(Gdx.graphics.getDeltaTime());
+        }
     }
 
     @Override
@@ -206,10 +301,19 @@ private void logFramebuffer() {
         if (sceneManager != null) {
             sceneManager.updateViewport(width, height);
         }
+        if (hud != null) {
+            hud.resize(width, height);
+        }
     }
 
     @Override
     public void dispose() {
+        if (hud != null) {
+            hud.dispose();
+        }
+        if (uiTheme != null) {
+            uiTheme.dispose();
+        }
         if (sceneManager != null) {
             sceneManager.dispose();
         }

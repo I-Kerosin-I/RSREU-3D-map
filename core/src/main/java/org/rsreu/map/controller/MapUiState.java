@@ -1,19 +1,21 @@
 package org.rsreu.map.controller;
 
+import org.rsreu.map.domain.campus.Space;
+
+import java.util.List;
+
 /**
- * UI state for the map application.
+ * Snapshot of the application state the UI renders. Produced by
+ * {@link MapController}, consumed by UI components; never modified by widgets.
  */
 public record MapUiState(
-    String currentFloor,
-    String selectedRoom,
-    String[] searchResults,
-    String route
+    List<Space> searchResults,
+    String selectedRoomId
 ) {
-    public MapUiState {
-        // Default values
-    }
 
-    public static MapUiState empty() {
-        return new MapUiState(null, null, null, null);
+    public static final MapUiState EMPTY = new MapUiState(List.of(), null);
+
+    public MapUiState {
+        searchResults = searchResults == null ? List.of() : List.copyOf(searchResults);
     }
 }

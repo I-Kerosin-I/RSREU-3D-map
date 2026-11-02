@@ -1,12 +1,16 @@
 package org.rsreu.map.content;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.utils.JsonValue;
 
 import org.rsreu.map.domain.campus.Building;
 import org.rsreu.map.domain.campus.Campus;
+import org.rsreu.map.domain.campus.CategoryDef;
+import org.rsreu.map.domain.campus.CategoryTaxonomy;
 import org.rsreu.map.domain.campus.Floor;
 import org.rsreu.map.domain.campus.Space;
 import org.rsreu.map.domain.campus.SpaceType;
+import org.rsreu.map.domain.campus.SubcategoryDef;
 import org.rsreu.map.domain.geometry.Bounds3;
 import org.rsreu.map.domain.geometry.Point3;
 import org.rsreu.map.domain.model.BuildingId;
@@ -43,9 +47,47 @@ public class ManifestParser {
         try {
             return parseFullCampus(root);
         } catch (Exception e) {
-            System.err.println("Warning: Failed to parse full manifest, using stub data: " + e.getMessage());
+            Gdx.app.error("ManifestParser", "Failed to parse full manifest, using stub data: " + e.getMessage(), e);
             return createStubCampus();
         }
+    }
+
+    /**
+     * Parses the top-level {@code categories} section of the manifest into the
+     * display taxonomy for the object browser panel.
+     *
+     * @param root the parsed JSON manifest
+     * @return the category taxonomy, empty when the manifest defines none
+     */
+    public CategoryTaxonomy parseCategories(JsonValue root) {
+        JsonValue categoriesArray = root == null ? null : root.get("categories");
+        if (categoriesArray == null) {
+            return CategoryTaxonomy.EMPTY;
+        }
+
+        List<CategoryDef> categories = new ArrayList<>();
+        for (JsonValue categoryValue : categoriesArray) {
+            String id = categoryValue.getString("id", null);
+            if (id == null) {
+                continue;
+            }
+            String name = categoryValue.getString("name", id);
+
+            List<SubcategoryDef> subcategories = new ArrayList<>();
+            JsonValue subcategoriesArray = categoryValue.get("subcategories");
+            if (subcategoriesArray != null) {
+                for (JsonValue subcategoryValue : subcategoriesArray) {
+                    String subId = subcategoryValue.getString("id", null);
+                    if (subId == null) {
+                        continue;
+                    }
+                    subcategories.add(new SubcategoryDef(subId, subcategoryValue.getString("name", subId)));
+                }
+            }
+
+            categories.add(new CategoryDef(id, name, subcategories));
+        }
+        return new CategoryTaxonomy(categories);
     }
 
     private Campus parseFullCampus(JsonValue root) {
@@ -111,6 +153,9 @@ public class ManifestParser {
         String name = spaceValue.getString("name", "Unknown Space");
         String typeStr = spaceValue.getString("type", "OTHER");
         String modelNode = spaceValue.getString("modelNode", "");
+        String description = spaceValue.getString("description", null);
+        String category = spaceValue.getString("category", null);
+        String subcategory = spaceValue.getString("subcategory", null);
 
         if (id == null) return null;
 
@@ -119,7 +164,8 @@ public class ManifestParser {
         // Parse bounds if present
         Bounds3 bounds = parseBounds(spaceValue.get("bounds"));
 
-        return new Space(new RoomId(id), name, new FloorId(floorId), type, modelNode, bounds);
+        return new Space(new RoomId(id), name, new FloorId(floorId), type, modelNode, bounds,
+            description, category, subcategory);
     }
 
     private SpaceType parseSpaceType(String typeStr) {

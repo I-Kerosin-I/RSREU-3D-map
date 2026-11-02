@@ -59,7 +59,7 @@ public final class RoomMaterialManager {
     private static final Color HIGHLIGHT_COLOR = new Color(0x2f6db2);
 
     /** Exponential approach rate of the animated opacity and color, 1/s. */
-    private static final float ANIMATION_RATE = 1000f;
+    private static final float ANIMATION_RATE = 10f;
     /** Remaining difference below which an animated value snaps to its target. */
     private static final float ANIMATION_EPSILON = 0.004f;
 

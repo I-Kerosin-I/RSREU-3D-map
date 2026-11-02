@@ -44,6 +44,18 @@
                 <version>${libgdx.version}</version>
                 <classifier>natives-desktop</classifier>
             </dependency>
+            <!-- libGDX official freetype extension: runtime TTF text rendering (Cyrillic UI fonts) -->
+            <dependency>
+                <groupId>com.badlogicgames.gdx</groupId>
+                <artifactId>gdx-freetype</artifactId>
+                <version>${libgdx.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.badlogicgames.gdx</groupId>
+                <artifactId>gdx-freetype-platform</artifactId>
+                <version>${libgdx.version}</version>
+                <classifier>natives-desktop</classifier>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 

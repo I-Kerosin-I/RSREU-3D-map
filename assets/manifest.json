@@ -4,51 +4,139 @@
     "units": "meters",
     "upAxis": "Y"
   },
+  "categories": [
+    {
+      "id": "departments",
+      "name": "Кафедры",
+      "subcategories": [
+        { "id": "evm", "name": "ЭВМ" },
+        { "id": "sapr_vs", "name": "САПР ВС" },
+        { "id": "kt", "name": "КТ" },
+        { "id": "fvt", "name": "ФВТ" }
+      ]
+    },
+    {
+      "id": "wc",
+      "name": "WC",
+      "subcategories": [
+        { "id": "m", "name": "М" },
+        { "id": "f", "name": "Ж" }
+      ]
+    },
+    { "id": "canteen", "name": "Столовые" },
+    { "id": "coffee", "name": "Кофе-автоматы" },
+    { "id": "lounge", "name": "Лаунж-зоны" },
+    { "id": "monument", "name": "Памятники" },
+    { "id": "open_room", "name": "Открытые аудитории" },
+    { "id": "amphitheater", "name": "Аудитории-амфитеатры" }
+  ],
   "buildings": [
     {
       "id": "main",
       "name": "Главный корпус",
-      "model": "models/test.glb",
+      "model": "models/MainCampus.glb",
       "floors": [
+        { "id": "1", "level": 1, "heightMeters": 0.0 },
         {
-          "id": "1",
-          "level": 1,
+          "id": "2",
+          "level": 2,
           "heightMeters": 0.0,
           "spaces": [
             {
-              "id": "room_test",
-              "name": "Тестовая комната",
+              "id": "main_room_210",
+              "name": "а.210",
+              "description": "Лаборатория кафедры ЭВМ",
               "type": "ROOM",
-              "modelNode": "Box",
-              "bounds": {
-                "min": [-0.5, 0.0, -0.5],
-                "max": [0.5, 1.0, 0.5]
-              }
+              "category": "departments",
+              "subcategory": "evm",
+              "modelNode": "main_room_210_hitbox"
             }
           ]
-        }
+        },
+        {
+          "id": "3",
+          "level": 3,
+          "heightMeters": 0.0,
+          "spaces": [
+            { "id": "main_room_301", "name": "а.301", "type": "ROOM", "modelNode": "main_room_301_hitbox" },
+            { "id": "main_room_304", "name": "а.304", "type": "ROOM", "modelNode": "main_room_304_hitbox" },
+            { "id": "main_room_304a", "name": "а.304a", "type": "ROOM", "modelNode": "main_room_304a_hitbox" },
+            { "id": "main_room_305", "name": "а.305", "type": "ROOM", "modelNode": "main_room_305_hitbox" },
+            { "id": "main_room_306", "name": "а.306", "type": "ROOM", "modelNode": "main_room_306_hitbox" },
+            { "id": "main_room_307", "name": "а.307", "type": "ROOM", "modelNode": "main_room_307_hitbox" },
+            { "id": "main_room_307a", "name": "а.307a", "type": "ROOM", "modelNode": "main_room_307a_hitbox" },
+            { "id": "main_room_308", "name": "а.308", "type": "ROOM", "modelNode": "main_room_308_hitbox" },
+            { "id": "main_room_309", "name": "а.309", "type": "ROOM", "modelNode": "main_room_309_hitbox" },
+            { "id": "main_room_309a", "name": "а.309a", "type": "ROOM", "modelNode": "main_room_309a_hitbox" },
+            { "id": "main_room_310", "name": "а.310", "type": "ROOM", "modelNode": "main_room_310_hitbox" },
+            { "id": "main_room_311", "name": "а.311", "type": "ROOM", "modelNode": "main_room_311_hitbox" },
+            { "id": "main_room_312", "name": "а.312", "type": "ROOM", "modelNode": "main_room_312_hitbox" },
+            { "id": "main_room_313", "name": "а.313", "type": "ROOM", "modelNode": "main_room_313_hitbox" },
+            { "id": "main_room_313a", "name": "а.313a", "type": "ROOM", "modelNode": "main_room_313a_hitbox" },
+            { "id": "main_room_313b", "name": "а.313b", "type": "ROOM", "modelNode": "main_room_313b_hitbox" },
+            { "id": "main_room_314", "name": "а.314", "type": "ROOM", "modelNode": "main_room_314_hitbox" },
+            { "id": "main_room_315", "name": "а.315", "type": "ROOM", "modelNode": "main_room_315_hitbox" },
+            { "id": "main_room_316", "name": "а.316", "type": "ROOM", "modelNode": "main_room_316_hitbox" },
+            { "id": "main_room_317", "name": "а.317", "type": "ROOM", "modelNode": "main_room_317_hitbox" },
+            { "id": "main_room_318", "name": "а.318", "type": "ROOM", "modelNode": "main_room_318_hitbox" },
+            { "id": "main_room_319", "name": "а.319", "type": "ROOM", "modelNode": "main_room_319_hitbox" },
+            { "id": "main_room_320", "name": "а.320", "type": "ROOM", "modelNode": "main_room_320_hitbox" },
+            { "id": "main_room_321", "name": "а.321", "type": "ROOM", "modelNode": "main_room_321_hitbox" },
+            { "id": "main_room_322", "name": "а.322", "type": "ROOM", "modelNode": "main_room_322_hitbox" },
+            { "id": "main_room_323", "name": "а.323", "type": "ROOM", "modelNode": "main_room_323_hitbox" },
+            { "id": "main_room_325", "name": "а.325", "type": "ROOM", "modelNode": "main_room_325_hitbox" },
+            { "id": "main_room_326", "name": "а.326", "type": "ROOM", "modelNode": "main_room_326_hitbox" },
+            { "id": "main_room_327", "name": "а.327", "type": "ROOM", "modelNode": "main_room_327_hitbox" },
+            { "id": "main_room_328", "name": "а.328", "type": "ROOM", "modelNode": "main_room_328_hitbox" },
+            { "id": "main_room_329", "name": "а.329", "type": "ROOM", "modelNode": "main_room_329_hitbox" },
+            { "id": "main_room_331", "name": "а.331", "type": "ROOM", "modelNode": "main_room_331_hitbox" },
+            { "id": "main_room_332", "name": "а.332", "type": "ROOM", "modelNode": "main_room_332_hitbox" },
+            { "id": "main_room_333", "name": "а.333", "type": "ROOM", "modelNode": "main_room_333_hitbox" },
+            { "id": "main_room_334", "name": "а.334", "type": "ROOM", "modelNode": "main_room_334_hitbox" },
+            { "id": "main_room_335", "name": "а.335", "type": "ROOM", "modelNode": "main_room_335_hitbox" },
+            { "id": "main_room_336", "name": "а.336", "type": "ROOM", "modelNode": "main_room_336_hitbox" },
+            { "id": "main_room_337", "name": "а.337", "type": "ROOM", "modelNode": "main_room_337_hitbox" },
+            { "id": "main_room_338", "name": "а.338", "type": "ROOM", "modelNode": "main_room_338_hitbox" },
+            { "id": "main_room_338a", "name": "а.338a", "type": "ROOM", "modelNode": "main_room_338a_hitbox" },
+            { "id": "main_room_339a", "name": "а.339a", "type": "ROOM", "modelNode": "main_room_339a_hitbox" },
+            { "id": "main_room_340", "name": "а.340", "type": "ROOM", "modelNode": "main_room_340_hitbox" },
+            { "id": "main_room_341", "name": "а.341", "type": "ROOM", "modelNode": "main_room_341_hitbox" },
+            { "id": "main_room_341_1", "name": "а.341-1", "type": "ROOM", "modelNode": "main_room_341_1_hitbox" },
+            { "id": "main_room_342", "name": "а.342", "type": "ROOM", "modelNode": "main_room_342_hitbox" },
+            { "id": "main_room_343", "name": "а.343", "type": "ROOM", "modelNode": "main_room_343_hitbox" },
+            { "id": "main_room_344", "name": "а.344", "type": "ROOM", "modelNode": "main_room_344_hitbox" },
+            { "id": "main_room_345", "name": "а.345", "type": "ROOM", "modelNode": "main_room_345_hitbox" },
+            { "id": "main_room_346", "name": "а.346", "type": "ROOM", "modelNode": "main_room_346_hitbox" },
+            { "id": "main_room_347", "name": "а.347", "type": "ROOM", "modelNode": "main_room_347_hitbox" },
+            { "id": "main_room_348", "name": "а.348", "type": "ROOM", "modelNode": "main_room_348_hitbox" },
+            { "id": "main_room_349", "name": "а.349", "type": "ROOM", "modelNode": "main_room_349_hitbox" },
+            { "id": "main_room_349a", "name": "а.349a", "type": "ROOM", "modelNode": "main_room_349a_hitbox" },
+            { "id": "main_room_350", "name": "а.350", "type": "ROOM", "modelNode": "main_room_350_hitbox" },
+            { "id": "main_room_352", "name": "а.352", "type": "ROOM", "modelNode": "main_room_352_hitbox" },
+            { "id": "main_room_353", "name": "а.353", "type": "ROOM", "modelNode": "main_room_353_hitbox" },
+            { "id": "main_room_354", "name": "а.354", "type": "ROOM", "modelNode": "main_room_354_hitbox" },
+            { "id": "main_room_355", "name": "а.355", "type": "ROOM", "modelNode": "main_room_355_hitbox" },
+            { "id": "main_room_356", "name": "а.356", "type": "ROOM", "modelNode": "main_room_356_hitbox" },
+            { "id": "main_room_360", "name": "а.360", "type": "ROOM", "modelNode": "main_room_360_hitbox" },
+            { "id": "main_room_362", "name": "а.362", "type": "ROOM", "modelNode": "main_room_362_hitbox" },
+            { "id": "main_room_364", "name": "а.364", "type": "ROOM", "modelNode": "main_room_364_hitbox" },
+            { "id": "main_room_366", "name": "а.366", "type": "ROOM", "modelNode": "main_room_366_hitbox" },
+            { "id": "main_room_368", "name": "а.368", "type": "ROOM", "modelNode": "main_room_368_hitbox" },
+            { "id": "main_room_buffet", "name": "Буфет", "type": "OTHER", "category": "canteen", "modelNode": "main_room_buffet_hitbox" },
+            { "id": "main_room_electric", "name": "Электрощитовая", "type": "OTHER", "modelNode": "main_room_electric_hitbox" },
+            { "id": "main_room_Kladovaya", "name": "Кладовая", "type": "OTHER", "modelNode": "main_room_Kladovaya_hitbox" },
+            { "id": "main_room_musem", "name": "Музей", "type": "OTHER", "modelNode": "main_room_musem_hitbox" },
+            { "id": "main_room_WC_f3l", "name": "WC (Ж, лев.)", "type": "RESTROOM", "category": "wc", "subcategory": "f", "modelNode": "main_room_WC_f3l_hitbox" },
+            { "id": "main_room_WC_f3r", "name": "WC (Ж, прав.)", "type": "RESTROOM", "category": "wc", "subcategory": "f", "modelNode": "main_room_WC_f3r_hitbox" },
+            { "id": "main_room_WC_f3r2", "name": "WC (Ж, прав. 2)", "type": "RESTROOM", "category": "wc", "subcategory": "f", "modelNode": "main_room_WC_f3r2_hitbox" },
+            { "id": "main_room_WC_m3l", "name": "WC (М)", "type": "RESTROOM", "category": "wc", "subcategory": "m", "modelNode": "main_room_WC_m3l_hitbox" }
+          ]
+        },
+        { "id": "4", "level": 4, "heightMeters": 0.0 }
       ],
       "navigation": {
-        "nodes": [
-          {
-            "id": "nav_1_01",
-            "floor": "1",
-            "position": [0.0, 0.5, 0.0]
-          },
-          {
-            "id": "nav_1_02",
-            "floor": "1",
-            "position": [2.0, 0.5, 0.0]
-          }
-        ],
-        "edges": [
-          {
-            "from": "nav_1_01",
-            "to": "nav_1_02",
-            "type": "CORRIDOR",
-            "bidirectional": true
-          }
-        ]
+        "nodes": [],
+        "edges": []
       }
     }
   ]
