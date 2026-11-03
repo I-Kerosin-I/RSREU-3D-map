@@ -27,6 +27,9 @@ public class MapController {
         /** Locks the room's floor, highlights the room and flies the camera to it. */
         void focusRoom(String hitboxNodeName);
 
+        /** Highlights every listed room over the dimmed building, across floors. */
+        void focusCategory(List<String> hitboxNodeNames);
+
         /** Returns the scene to the normal state (no selection, no highlight). */
         void clearFocus();
     }
@@ -98,22 +101,54 @@ public class MapController {
      * @param query search query, blank queries yield no results
      */
     public void search(String query) {
-        state = new MapUiState(findRooms.findByQuery(query), state.selectedRoomId());
+        state = new MapUiState(findRooms.findByQuery(query), state.selectedRoomId(),
+            state.selectedCategoryId(), state.selectedSubcategoryId());
         notifyListeners();
     }
 
     /**
      * Selects an object from the UI: publishes the selection and asks the 3D
-     * layer to lock its floor, highlight it and fly the camera to it.
+     * layer to lock its floor, highlight it and fly the camera to it. Re-selecting
+     * the already selected room re-runs the camera flight.
      */
     public void selectObject(Space space) {
         if (space == null) {
             return;
         }
-        state = new MapUiState(state.searchResults(), space.id().value());
+        state = new MapUiState(state.searchResults(), space.id().value(), null, null);
         if (actions != null) {
             actions.focusRoom(space.modelNodeName());
         }
+        notifyListeners();
+    }
+
+    /**
+     * Enters the category visualization: every room of the category (optionally
+     * of one subcategory) is highlighted over the dimmed building, across all
+     * floors. Replaces any previous room or category selection.
+     */
+    public void selectCategory(String categoryId, String subcategoryId) {
+        List<Space> spaces = findRooms.findByCategory(categoryId, subcategoryId);
+        if (spaces.isEmpty()) {
+            return;
+        }
+        state = new MapUiState(state.searchResults(), null, categoryId, subcategoryId);
+        if (actions != null) {
+            actions.focusCategory(spaces.stream().map(Space::modelNodeName).toList());
+        }
+        notifyListeners();
+    }
+
+    /**
+     * The 3D scene discarded the selection on its own (Escape, a click on empty
+     * space or on another room): the UI selection must follow. No-op when the UI
+     * has nothing selected.
+     */
+    public void sceneSelectionCleared() {
+        if (state.selectedRoomId() == null && state.selectedCategoryId() == null) {
+            return;
+        }
+        state = new MapUiState(state.searchResults(), null, null, null);
         notifyListeners();
     }
 
@@ -122,10 +157,10 @@ public class MapController {
      * normal state; search results stay until the query changes.
      */
     public void clearSelection() {
-        if (state.selectedRoomId() == null) {
+        if (state.selectedRoomId() == null && state.selectedCategoryId() == null) {
             return;
         }
-        state = new MapUiState(state.searchResults(), null);
+        state = new MapUiState(state.searchResults(), null, null, null);
         if (actions != null) {
             actions.clearFocus();
         }

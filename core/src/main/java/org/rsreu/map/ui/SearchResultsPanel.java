@@ -14,13 +14,10 @@ import java.util.List;
 
 /**
  * The temporary result list shown under the search bar while a query is typed.
- * Clicking a row selects the object on the map. Rows are rebuilt per search,
- * not per frame.
+ * Shows every match; the panel scrolls. Clicking a row selects the object on
+ * the map. Rows are rebuilt per search, not per frame.
  */
 public final class SearchResultsPanel {
-
-    /** Keeps the panel compact; the manifest of a building has ~100 spaces. */
-    private static final int MAX_RESULTS = 20;
 
     private final UiTheme theme;
     private final MapController controller;
@@ -47,14 +44,8 @@ public final class SearchResultsPanel {
             return;
         }
 
-        int shown = Math.min(results.size(), MAX_RESULTS);
-        for (int i = 0; i < shown; i++) {
-            container.add(resultRow(results.get(i))).growX();
-            container.row();
-        }
-        if (results.size() > shown) {
-            Label more = new Label("…и ещё " + (results.size() - shown), theme.skin(), "hint");
-            container.add(more).left().pad(6f, 8f, 8f, 8f);
+        for (Space space : results) {
+            container.add(resultRow(space)).growX();
             container.row();
         }
     }

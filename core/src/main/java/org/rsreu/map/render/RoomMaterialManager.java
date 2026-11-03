@@ -149,6 +149,17 @@ public final class RoomMaterialManager {
     }
 
     /**
+     * Dims every floor and the outer shell equally, so highlighted hitboxes show
+     * through the whole building — e.g. while every room of a category is lit
+     * across floors. Hitbox highlights are unaffected.
+     */
+    public void dimAll() {
+        for (Unit unit : units) {
+            setTarget(unit, unit.hitbox ? State.NORMAL : State.DIMMED);
+        }
+    }
+
+    /**
      * Locks a floor selection: the selected floor stays opaque, all other floors
      * and the shell become fully hidden, hitboxes stay invisible.
      *

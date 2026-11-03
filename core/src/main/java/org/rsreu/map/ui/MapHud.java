@@ -83,6 +83,8 @@ public final class MapHud implements Disposable {
         controller.addStateListener(state -> {
             resultsPanel.update(state.searchResults());
             refreshSearchMode();
+            browserPanel.syncSelection(state.selectedRoomId(),
+                state.selectedCategoryId(), state.selectedSubcategoryId());
         });
 
         // Escape in the search field unfocuses it; the camera controller still

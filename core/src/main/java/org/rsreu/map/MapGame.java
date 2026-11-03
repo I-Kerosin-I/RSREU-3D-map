@@ -144,6 +144,13 @@ public class MapGame extends ApplicationAdapter {
             }
 
             @Override
+            public void focusCategory(List<String> hitboxNodeNames) {
+                if (roomHighlighter != null) {
+                    roomHighlighter.showCategory(hitboxNodeNames);
+                }
+            }
+
+            @Override
             public void clearFocus() {
                 if (roomHighlighter != null) {
                     roomHighlighter.clearSelection();
@@ -152,6 +159,10 @@ public class MapGame extends ApplicationAdapter {
         });
         mapController.setHoveredHitboxSupplier(
             () -> roomHighlighter == null ? null : roomHighlighter.hoveredHitbox());
+        // A selection cleared in the scene (Escape, click) must drop the UI selection.
+        if (roomHighlighter != null) {
+            roomHighlighter.setSelectionClearedCallback(() -> mapController.sceneSelectionCleared());
+        }
 
         // UI overlay; the stage consumes input before the camera controller
         uiTheme = new UiTheme();
