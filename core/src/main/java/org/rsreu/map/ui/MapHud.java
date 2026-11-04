@@ -1,6 +1,7 @@
 package org.rsreu.map.ui;
 
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.scenes.scene2d.Actor;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.InputListener;
 import com.badlogic.gdx.scenes.scene2d.Stage;
@@ -52,26 +53,29 @@ public final class MapHud implements Disposable {
         Table root = new Table();
         root.setFillParent(true);
         // Rows are aligned as a block; without this the side panel sits centered.
-        root.align(Align.right);
+        root.align(Align.left);
         // The root only hosts the panels; it must never be hit by stage.hit,
         // otherwise every point of the screen would count as "over the UI".
         // childrenOnly keeps the panels (its children) fully interactive.
         root.setTouchable(Touchable.childrenOnly);
         stage.addActor(root);
 
+        // No opaque panel behind the controls: the search field and the rows
+        // carry their own floating chips (Fusion 360 browser style).
         Table panel = new Table();
-        panel.setBackground(theme.panelBackground());
-        panel.pad(12f);
-        root.add(panel).width(PANEL_WIDTH).growY().pad(PANEL_MARGIN).align(Align.right);
+        panel.pad(0f);
+        root.add(panel).width(PANEL_WIDTH).growY().pad(PANEL_MARGIN).align(Align.left);
 
         panel.add(searchBar.getActor()).growX().height(36f).padBottom(10f);
         panel.row();
 
         // While a query is typed the results replace the category tree; the
-        // Stack keeps the panel layout stable in both modes.
+        // Stack keeps the panel layout stable in both modes. The scroll panes
+        // react to input only over their rows: the empty area lets clicks and
+        // the mouse wheel through to the 3D scene.
         Stack content = new Stack();
         browserScroll = browserPanel.getActor();
-        resultsScroll = new ScrollPane(resultsPanel.getActor(), theme.skin());
+        resultsScroll = new ContentScrollPane(resultsPanel.getActor(), theme.skin());
         resultsScroll.setFadeScrollBars(false);
         content.add(browserScroll);
         content.add(resultsScroll);
@@ -94,6 +98,20 @@ public final class MapHud implements Disposable {
             public boolean keyDown(InputEvent event, int keycode) {
                 if (keycode == Input.Keys.ESCAPE) {
                     stage.setKeyboardFocus(null);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean touchDown(InputEvent event, float x, float y, int pointer, int button) {
+                // Clicking anywhere but the search field leaves it, so WASD
+                // returns to the camera. The event is not consumed: the click
+                // keeps working wherever it landed.
+                if (stage.getKeyboardFocus() instanceof TextField) {
+                    Actor hit = stage.hit(x, y, true);
+                    if (!(hit instanceof TextField)) {
+                        stage.setKeyboardFocus(null);
+                    }
                 }
                 return false;
             }

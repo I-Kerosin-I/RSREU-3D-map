@@ -23,6 +23,10 @@ import com.badlogic.gdx.utils.Disposable;
  * bundled PT Sans files, the color palette, flat / rounded drawables and the
  * widget styles. All widgets take their styles from here, so the visual design
  * can change without touching UI logic.
+ * <p>
+ * The controls float over the 3D scene in the manner of the Fusion 360 browser:
+ * there is no opaque panel behind them, every text row carries its own small
+ * semi-transparent rounded "chip" instead.
  */
 public final class UiTheme implements Disposable {
 
@@ -30,14 +34,15 @@ public final class UiTheme implements Disposable {
     public static final Color TEXT = new Color(0xE6EBF4FF);
     public static final Color TEXT_DIM = new Color(0x94A0B8FF);
     public static final Color ACCENT = new Color(0x2F6DB2FF);
-    public static final Color PANEL_BG = new Color(0x10151FF0);
+    /** Floating chip under a single text row. */
+    public static final Color CHIP_BG = new Color(0x10151F82);
+    public static final Color CHIP_HOVER = new Color(0x2F6DB280);
+    public static final Color CHIP_SELECTED = new Color(0x2F6DB2B4);
     public static final Color TOOLTIP_BG = new Color(0x0C111AE6);
-    public static final Color FIELD_BG = new Color(0x1A2230FF);
-    public static final Color FIELD_BG_FOCUSED = new Color(0x212B3DFF);
-    public static final Color ROW_HOVER = new Color(0x2F6DB250);
-    public static final Color TREE_SELECTION = new Color(0x2F6DB260);
-    public static final Color SCROLL_TRACK = new Color(0xFFFFFF18);
-    public static final Color SCROLL_KNOB = new Color(0xFFFFFF40);
+    public static final Color FIELD_BG = new Color(0x1A223099);
+    public static final Color FIELD_BG_FOCUSED = new Color(0x212B3DB4);
+    public static final Color SCROLL_TRACK = new Color(0xFFFFFF28);
+    public static final Color SCROLL_KNOB = new Color(0xFFFFFF66);
 
     /** Default ASCII charset of FreeTypeFontGenerator plus Russian glyphs and marks. */
     private static final String CHARACTERS = FreeTypeFontGenerator.DEFAULT_CHARS
@@ -48,8 +53,10 @@ public final class UiTheme implements Disposable {
     private final BitmapFont regularFont;
     private final BitmapFont boldFont;
     private final BitmapFont smallFont;
-    private final Drawable panelBackground;
     private final Drawable tooltipBackground;
+    private final Drawable chipBackground;
+    private final Drawable chipHover;
+    private final Drawable chipSelected;
 
     public UiTheme() {
         regularFont = createFont("assets/fonts/PTSans-Regular.ttf", 15);
@@ -63,10 +70,11 @@ public final class UiTheme implements Disposable {
 
         skin.add("white", new Texture(makeFlatPixmap(Color.WHITE)));
 
-        panelBackground = rounded(PANEL_BG, 10);
         tooltipBackground = rounded(TOOLTIP_BG, 8);
-        skin.add("panel_bg", panelBackground);
         skin.add("tooltip_bg", tooltipBackground);
+        chipBackground = roundedPadded(CHIP_BG, 9, 8, 3);
+        chipHover = roundedPadded(CHIP_HOVER, 9, 8, 3);
+        chipSelected = roundedPadded(CHIP_SELECTED, 9, 8, 3);
 
         addStyles();
     }
@@ -75,14 +83,24 @@ public final class UiTheme implements Disposable {
         return skin;
     }
 
-    /** Rounded panel background used by the side panel. */
-    public Drawable panelBackground() {
-        return panelBackground;
-    }
-
     /** Rounded background used by the hover tooltip. */
     public Drawable tooltipBackground() {
         return tooltipBackground;
+    }
+
+    /** Floating chip under a regular text row. */
+    public Drawable chipBackground() {
+        return chipBackground;
+    }
+
+    /** Floating chip under a hovered row (search results). */
+    public Drawable chipHover() {
+        return chipHover;
+    }
+
+    /** Floating chip under the selected row. */
+    public Drawable chipSelected() {
+        return chipSelected;
     }
 
     /** A plain 1x1 drawable tinted with the given color. */
@@ -103,23 +121,35 @@ public final class UiTheme implements Disposable {
         field.fontColor = TEXT;
         field.messageFont = smallFont;
         field.messageFontColor = TEXT_DIM;
-        field.background = flat(FIELD_BG);
-        field.focusedBackground = flat(FIELD_BG_FOCUSED);
+        // The rounded background carries the horizontal padding, so the typed
+        // text and the placeholder sit away from the field's left edge.
+        field.background = roundedPadded(FIELD_BG, 10, 10, 7);
+        field.focusedBackground = roundedPadded(FIELD_BG_FOCUSED, 10, 10, 7);
         field.cursor = flat(TEXT);
         field.selection = flat(new Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.35f));
         skin.add("field", field);
 
         ScrollPane.ScrollPaneStyle scroll = new ScrollPane.ScrollPaneStyle();
-        scroll.vScroll = flat(SCROLL_TRACK);
-        scroll.vScrollKnob = flat(SCROLL_KNOB);
+        // A 1px-wide drawable would render the bar invisible; give the track
+        // and the knob a sensible minimum width.
+        Drawable track = flat(SCROLL_TRACK);
+        track.setMinWidth(3f);
+        Drawable knob = flat(SCROLL_KNOB);
+        knob.setMinWidth(3f);
+        scroll.vScroll = track;
+        scroll.vScrollKnob = knob;
         scroll.hScroll = flat(SCROLL_TRACK);
         scroll.hScrollKnob = flat(SCROLL_KNOB);
         skin.add("default", scroll);
 
         Tree.TreeStyle tree = new Tree.TreeStyle();
-        tree.plus = treeIcon(true);
-        tree.minus = treeIcon(false);
-        tree.selection = flat(TREE_SELECTION);
+        // Collapsed / expanded subtrees show a small triangular arrow instead of
+        // the plus / minus squares.
+        tree.plus = arrowIcon(false);
+        tree.minus = arrowIcon(true);
+        // Row highlighting is done by the per-row chips; the full-width
+        // selection bar stays off.
+        tree.selection = null;
         skin.add("tree", tree);
     }
 
@@ -150,11 +180,15 @@ public final class UiTheme implements Disposable {
 
     /**
      * Rounded square texture stretched as a nine patch, so the corners keep
-     * their radius at any widget size.
+     * their radius at any widget size. Linear filtering keeps the rounded
+     * corners smooth when the patch is stretched or minified. Blending is off
+     * while drawing: the overlapping primitives must write the color and alpha
+     * as given, not blend over each other and accumulate the opacity.
      */
-    private Drawable rounded(Color color, int radius) {
+    private NinePatchDrawable rounded(Color color, int radius) {
         int size = radius * 2 + 2;
         Pixmap pixmap = new Pixmap(size, size, Pixmap.Format.RGBA8888);
+        pixmap.setBlending(Pixmap.Blending.None);
         pixmap.setColor(color);
         pixmap.fillRectangle(radius, 0, size - 2 * radius, size);
         pixmap.fillRectangle(0, radius, size, size - 2 * radius);
@@ -164,23 +198,34 @@ public final class UiTheme implements Disposable {
         pixmap.fillCircle(size - radius - 1, size - radius - 1, radius);
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
+        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
         skin.add("rounded_" + Integer.toHexString(color.toIntBits()) + "_" + radius, texture);
-        NinePatchDrawable drawable = new NinePatchDrawable(
-            new NinePatch(texture, radius, radius, radius, radius));
+        return new NinePatchDrawable(new NinePatch(texture, radius, radius, radius, radius));
+    }
+
+    /** A rounded background whose nine patch padding insets the content. */
+    private NinePatchDrawable roundedPadded(Color color, int radius, int padX, int padY) {
+        NinePatchDrawable drawable = rounded(color, radius);
+        drawable.getPatch().setPadding(padX, padY, padY, padX);
         return drawable;
     }
 
-    /** Small +/- expansion marker of the category tree. */
-    private Drawable treeIcon(boolean plus) {
-        Pixmap pixmap = new Pixmap(12, 12, Pixmap.Format.RGBA8888);
+    /**
+     * Small triangular expansion marker of the category tree: pointing right
+     * while the subtree is collapsed and down once it is expanded.
+     */
+    private Drawable arrowIcon(boolean expanded) {
+        Pixmap pixmap = new Pixmap(10, 10, Pixmap.Format.RGBA8888);
         pixmap.setColor(TEXT_DIM);
-        pixmap.fillRectangle(2, 5, 8, 2);
-        if (plus) {
-            pixmap.fillRectangle(5, 2, 2, 8);
+        if (expanded) {
+            pixmap.fillTriangle(2, 3, 8, 3, 5, 8); // down
+        } else {
+            pixmap.fillTriangle(3, 2, 3, 8, 8, 5); // right
         }
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
-        skin.add("tree_icon_" + (plus ? "plus" : "minus"), texture);
+        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        skin.add("tree_arrow_" + (expanded ? "down" : "right"), texture);
         return new TextureRegionDrawable(new TextureRegion(texture));
     }
 
