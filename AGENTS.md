@@ -104,27 +104,31 @@ Units are classified recursively: each `floorN` container node (wherever it sits
 | Hitbox highlighted | SRC_ALPHA / ONE_MINUS_SRC_ALPHA, α=0.6 | accent color | no |
 | Hitbox normal | not rendered (`NodePart.enabled = false`) | — | — |
 
-Body fills write depth only when fully opaque. Wireframes depth-test but never write depth. Shell color never writes depth: its nearest surface is recorded in a separate depth-only pass **after** the body color pass. Fully invisible units (hidden floors, non-highlighted hitboxes) are removed from rendering via `NodePart.enabled = false` once their fade-out settles.
+Floor and shell colors do not write depth: their nearest surfaces are recorded in separate depth-only passes. Only fully opaque floor fills enter the shared foreground depth baseline; each translucent floor has an independent temporary depth pass. Wireframes depth-test but never write depth. Fully invisible units (hidden floors, non-highlighted hitboxes) are removed from rendering via `NodePart.enabled = false` once their fade-out settles.
 
 The global filled-polygon offset uses `factor = 0`, `units = 2`: the constant unit bias breaks the coplanar fill/line tie without the slope-dependent bias that can push large near-edge-on walls behind interior geometry.
 
-### Transparency and shell self-occlusion
+### Transparency and per-floor/shell self-occlusion
 
-Whole-mesh sorting cannot reject hidden triangles and edges inside the double-sided shell mesh. Turning off shell depth writes during a fade loses that self-occlusion. `BuildingSceneManager.renderColors()` therefore always uses these passes on the existing MSAA framebuffer:
+Whole-mesh sorting cannot reject hidden triangles and edges inside a floor or the double-sided shell mesh. `BuildingSceneManager.renderColors()` uses independent nearest-surface depth passes on the existing MSAA framebuffer:
 
-1. body fills and wireframes, sorted by `BuildingRenderableSorter`;
-2. shell filled geometry only, color writes disabled, `GL_LEQUAL`, depth writes enabled regardless of opacity;
-3. shell filled geometry with animated color/alpha, `GL_EQUAL`, no depth writes;
-4. shell wireframe, `GL_LEQUAL`, no depth writes;
-5. highlighted hitboxes, `GL_ALWAYS`, no depth writes.
+1. fully opaque floor fills establish the opaque depth baseline; their color uses `GL_EQUAL`, followed by depth-tested non-writing wireframes;
+2. translucent floors are processed far to near along the camera view, with a stable discovery-order tie break;
+3. before each translucent floor, clear **depth only**, preserving accumulated color, and replay fully opaque floor depth;
+4. record only that floor's nearest fill depth (`GL_LEQUAL`, color writes disabled), then its color (`GL_EQUAL`, no depth writes) and lines (`GL_LEQUAL`, no depth writes);
+5. remove the final translucent floor's temporary depth by clearing depth and replaying the opaque baseline;
+6. run the accepted shell sequence: depth only (`GL_LEQUAL`, writes), animated color (`GL_EQUAL`, no writes), wireframe (`GL_LEQUAL`, no writes);
+7. highlighted hitboxes (`GL_ALWAYS`, no depth writes) last.
 
-The shell path is the same at alpha 1 and during a fade. The body is rendered **before** shell depth, so its interior color remains available for blending. Depth is not cleared between passes: opaque body geometry nearer than the shell must still occlude it, including from inside the building. Hidden/zero-alpha shell parts do not write depth.
+A shared prepass of all translucent floors would incorrectly hide farther floors even through a dimmed near floor. Temporary floor depth must never carry over to another floor or the shell. The baseline is filtered by **current** opacity, not target state or an almost-opaque threshold. Depth reconstruction uses the same PBR vertex path, transforms, polygon offset and MSAA samples. Clears require `glDepthMask(true)` and occur outside a batch; color writes are restored in `finally`.
 
-`BuildingRenderPasses` stores stable `ModelInstance` / `Node` / `NodePart` bindings during the material manager's classification. It submits each enabled part only to its group; source-material replacement does not change membership. Cached pass-local shell materials preserve the source PBR features, update animated color/opacity, and differ only in their depth state and depth-pass opacity. Both passes use the same PBR vertex path and polygon offset for reliable `GL_EQUAL`; the standard packed-depth shader has a different vertex computation and is not used here.
+The shell path remains the same at alpha 1 and during a fade, after all interior colors. Its prepass retains reconstructed opaque foreground depth: it must not discard nearer opaque walls, including when the camera is inside the building. Hidden/zero-alpha parts never write depth.
 
-The sorter's legacy material maps remain `IdentityHashMap`s: `Material.equals` and `hashCode` depend on mutable attributes. They order renderables but are **not** a substitute for per-fragment shell self-occlusion.
+`BuildingRenderPasses` stores stable `ModelInstance` / `Node` / `NodePart` bindings by owning floor unit (not descendant mesh name), shell, and hitbox. A container and its identically named child mesh stay in one floor group; walls/slabs/lines are not submitted again through a flattened body provider. Material replacement does not change membership. Cached depth/color materials preserve matching PBR features and follow current animation values. The standard packed-depth shader is not used because its vertex computation differs from the color shader.
 
-Animations retain exponential alpha/dim/highlight interpolation and the small settling epsilon. Normal source materials are restored immediately when settled; there is no extra `restorePending` frame or early-opacity threshold. Pass membership and shell depth/color policy remain unchanged at restoration. The renderer treats the shell as its nearest visible surface, not physically layered glass; exact coplanar duplicate shell triangles and translucent body geometry in front of the shell require separate treatment if encountered. Visual acceptance is required in addition to compilation and CPU regression checks.
+The sorter's legacy material maps remain `IdentityHashMap`s: `Material.equals` and `hashCode` depend on mutable attributes. They order renderables but are **not** a substitute for per-fragment self-occlusion.
+
+Animations retain exponential interpolation and the small settling epsilon. Normal source materials restore immediately; there is no extra `restorePending` frame or early-opacity threshold. Floors/shell are represented by their nearest surface, not physically layered glass. Between floors, camera-space bounds-center ordering is an approximation: intersecting geometry with a different order per pixel needs finer splitting or order-independent transparency if encountered. Exact coplanar duplicates also require separate treatment. Visual acceptance is required in addition to compilation and the CPU two-floor regression checks.
 
 `BlendingAttribute` + `PBRColorAttribute.createBaseColorFactor` are set per-node via mutable `NodePart` materials. Materials are private copies per `ModelInstance`, so changes don't leak.
 

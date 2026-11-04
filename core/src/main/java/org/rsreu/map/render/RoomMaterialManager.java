@@ -30,10 +30,10 @@ import java.util.regex.Pattern;
  * {@link #update(float)} from the render loop, so dimming, hiding and highlights
  * all fade smoothly.
  * <p>
- * Body translucency controls depth writes through its animated material. Shell
- * self-occlusion is handled separately by {@link BuildingRenderPasses} and
- * {@link BuildingSceneManager}: a body-first depth pass selects the nearest
- * shell surface before its color and wireframe are composited. Geometry that
+ * Floor and shell self-occlusion are handled separately by
+ * {@link BuildingRenderPasses} and {@link BuildingSceneManager}: independent
+ * nearest-surface depth passes precede each unit's color and wireframe. Only
+ * fully opaque floor fills form the shared foreground depth baseline. Geometry that
  * is fully invisible — non-highlighted hitboxes and hidden floors — is taken
  * out of rendering by clearing {@link NodePart#enabled}, because the hitbox
  * materials of the GLB are opaque.
@@ -341,7 +341,7 @@ public final class RoomMaterialManager {
             part.material.set(new DepthTestAttribute(GL20.GL_LEQUAL, false));
         }
         unit.parts.add(part);
-        renderPasses.add(node, part, SHELL_UNIT_NAME.equals(unit.name), unit.hitbox);
+        renderPasses.add(node, part, unit.name, SHELL_UNIT_NAME.equals(unit.name), unit.hitbox);
         unit.originals.add(new Material(part.material));
         ColorAttribute colorAttribute = (ColorAttribute) part.material.get(PBRColorAttribute.BaseColorFactor);
         Color base = colorAttribute != null ? colorAttribute.color : null;

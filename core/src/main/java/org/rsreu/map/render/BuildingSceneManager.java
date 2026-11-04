@@ -1,23 +1,25 @@
 package org.rsreu.map.render;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.g3d.ModelBatch;
 import com.badlogic.gdx.graphics.g3d.RenderableProvider;
 import net.mgsx.gltf.scene3d.scene.SceneManager;
 import net.mgsx.gltf.scene3d.shaders.PBRShaderProvider;
 
 /**
- * Renders the interior before recording the nearest shell surface in depth.
- * Shell colors and lines then test against that depth, preserving shell
- * self-occlusion throughout a fade without blocking the interior color behind
- * it. All passes use the existing framebuffer, including its MSAA samples.
+ * Floors and shell each use nearest-surface depth to reject their own hidden
+ * surfaces and wireframes. A fading floor's temporary depth is removed before
+ * the next floor, preserving the colors of all translucent layers. Opaque
+ * foreground depth is replayed after each clear. All passes retain backbuffer
+ * MSAA; the shell sequence and x-ray room overlays follow the floor colors.
  */
 public final class BuildingSceneManager extends SceneManager {
 
     private BuildingRenderPasses renderPasses;
 
     public BuildingSceneManager(BuildingRenderableSorter sorter) {
-        super(PBRShaderProvider.createDefault(24), PBRShaderProvider.createDefaultDepth(24), sorter);
+        super(new BuildingShaderProvider(24), PBRShaderProvider.createDefaultDepth(24), sorter);
     }
 
     public void setRenderPasses(BuildingRenderPasses renderPasses) {
@@ -31,34 +33,54 @@ public final class BuildingSceneManager extends SceneManager {
             return;
         }
         try {
-            ModelBatch batch = getBatch();
-            batch.begin(camera);
-            try {
-                batch.render(renderPasses.body(), computedEnvironement);
-                if (getSkyBox() != null) {
-                    batch.render(getSkyBox());
-                }
-            } finally {
-                batch.end();
+            renderDepthPass(renderPasses.opaqueDepth());
+            // Alpha-one color copies still carry BlendingAttribute. Keep lines
+            // in a separate batch so sorting cannot move them before the fills.
+            renderPass(renderPasses.opaqueColor());
+            renderPass(renderPasses.opaqueLines());
+            if (getSkyBox() != null) {
+                renderPass(getSkyBox());
             }
 
-            // Interior color and opaque foreground depth are already present.
-            // Do not clear depth: that would let shell faces draw over a nearer
-            // interior wall when the camera moves inside the building.
-            Gdx.gl.glColorMask(false, false, false, false);
-            try {
-                renderPass(renderPasses.shellDepth());
-            } finally {
-                Gdx.gl.glColorMask(true, true, true, true);
+            boolean temporaryFloorDepth = false;
+            for (BuildingRenderPasses.FloorPasses floor : renderPasses.translucentFloors(camera)) {
+                restoreOpaqueDepth();
+                renderDepthPass(floor.depth());
+                renderPass(floor.color());
+                renderPass(floor.lines());
+                temporaryFloorDepth = true;
             }
+            if (temporaryFloorDepth) {
+                // The last fading floor is not an opaque shell occluder. Keep
+                // all accumulated color, but rebuild only opaque foreground depth.
+                restoreOpaqueDepth();
+            }
+
+            // Opaque foreground remains a depth occluder, including from inside.
+            // Interior colors are already available for the shell's blending.
+            renderDepthPass(renderPasses.shellDepth());
             renderPass(renderPasses.shellColor());
             renderPass(renderPasses.shellLines());
             renderPass(renderPasses.overlays());
         } finally {
-            // Each pass ends its cached RenderContext before raw state changes.
-            // Leave both clearing the next frame and drawing the HUD enabled.
             Gdx.gl.glColorMask(true, true, true, true);
             Gdx.gl.glDepthMask(true);
+        }
+    }
+
+    private void restoreOpaqueDepth() {
+        // Clears run outside a batch and affect depth only, never accumulated color.
+        Gdx.gl.glDepthMask(true);
+        Gdx.gl.glClear(GL20.GL_DEPTH_BUFFER_BIT);
+        renderDepthPass(renderPasses.opaqueDepth());
+    }
+
+    private void renderDepthPass(RenderableProvider provider) {
+        Gdx.gl.glColorMask(false, false, false, false);
+        try {
+            renderPass(provider);
+        } finally {
+            Gdx.gl.glColorMask(true, true, true, true);
         }
     }
 
