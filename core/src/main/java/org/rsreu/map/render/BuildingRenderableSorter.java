@@ -1,40 +1,50 @@
 package org.rsreu.map.render;
 
 import com.badlogic.gdx.graphics.Camera;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.g3d.Material;
 import com.badlogic.gdx.graphics.g3d.Renderable;
 import com.badlogic.gdx.graphics.g3d.attributes.BlendingAttribute;
 import com.badlogic.gdx.graphics.g3d.utils.RenderableSorter;
-import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 
 import java.util.Comparator;
 
 /**
- * Sorts renderables into a fixed layer order instead of trusting pure distance
- * sorting, which breaks for nested geometry: the distance sorter measures the
- * center of each mesh, and the center of the outer shell mesh is the center of
- * the whole building, so interior pieces on the camera side sort as "closer"
- * and end up composited on top of the shell. While the shell is translucent
- * they then shine through at full strength no matter how opaque it gets, and
- * when its material is restored the depth test hides them at once — the visible
- * opacity jump.
+ * Orders body fills, wireframes and legacy shell/overlay materials by render
+ * phase. Whole-mesh sorting cannot provide per-triangle shell self-occlusion;
+ * {@link BuildingSceneManager} handles that with separate depth/color passes.
+ * The material maps remain useful for grouping renderables without relying on
+ * hashes of mutable color and opacity attributes.
  * <p>
- * The layer order that fixes it:
+ * The phase order:
  * <ol>
- *   <li>opaque geometry (front to back, depth written)</li>
- *   <li>building body layers — floors, dimmed shells — back to front</li>
- *   <li>the outer shell — its camera-facing surface is always the closest one,
- *   so drawing it last composites it correctly over everything inside</li>
- *   <li>the highlighted room hitbox — a depth-test-free x-ray marker</li>
+ *   <li>opaque fills (front to back, depth written);</li>
+ *   <li>opaque wireframes (after their coplanar fills);</li>
+ *   <li>blended body fills, then their wireframes (both back to front);</li>
+ *   <li>blended outer-shell fills, then their wireframes (both back to front);</li>
+ *   <li>the highlighted room hitbox — a depth-test-free x-ray marker.</li>
  * </ol>
+ * <p>
+ * A transparent interior wireframe is therefore composited before the shell
+ * fill and is attenuated by it, while the shell's own accent lines remain on
+ * top of its surface. This removes reliance on tied mesh centers or a large
+ * polygon offset for the line-overlay order.
  * Membership in the shell and overlay layers is decided by material identity:
  * {@link RoomMaterialManager} registers every material it hands out for those
  * units in the maps returned by {@link #shellMaterials()} and
  * {@link #overlayMaterials()}.
  */
 public final class BuildingRenderableSorter implements RenderableSorter, Comparator<Renderable> {
+
+    private static final int OPAQUE_FILL = 0;
+    private static final int OPAQUE_WIREFRAME = 1;
+    private static final int BLENDED_BODY_FILL = 2;
+    private static final int BLENDED_BODY_WIREFRAME = 3;
+    private static final int BLENDED_SHELL_FILL = 4;
+    private static final int BLENDED_SHELL_WIREFRAME = 5;
+    private static final int HITBOX_OVERLAY = 6;
 
     /**
      * Layer per working material, keyed by object identity. A {@code Material}'s
@@ -65,36 +75,48 @@ public final class BuildingRenderableSorter implements RenderableSorter, Compara
 
     @Override
     public int compare(Renderable a, Renderable b) {
-        boolean blendedA = isBlended(a);
-        boolean blendedB = isBlended(b);
-        if (blendedA != blendedB) {
-            // Opaque geometry first: it writes depth for everything after it.
-            return blendedA ? 1 : -1;
+        int phaseA = phase(a);
+        int phaseB = phase(b);
+        if (phaseA != phaseB) {
+            return Integer.compare(phaseA, phaseB);
         }
-        if (!blendedA) {
-            // Opaque: front to back, so the depth test rejects hidden fragments.
+        if (phaseA == OPAQUE_FILL) {
+            // Opaque fills write depth, so front-to-back rejects hidden fragments.
             return Float.compare(distance2(a), distance2(b));
         }
-        int layerA = layer(a);
-        int layerB = layer(b);
-        if (layerA != layerB) {
-            return Integer.compare(layerA, layerB);
-        }
-        // Within a layer: back to front, so blending composes correctly.
+        // Lines do not write depth, and transparent primitives must composite
+        // from far to near within one layer.
         return Float.compare(distance2(b), distance2(a));
     }
 
-    private int layer(Renderable renderable) {
-        Material material = renderable.material;
-        if (material != null) {
-            if (overlayMaterials.containsKey(material)) {
-                return 2;
-            }
-            if (shellMaterials.containsKey(material)) {
-                return 1;
-            }
+    private int phase(Renderable renderable) {
+        if (isOverlay(renderable)) {
+            return HITBOX_OVERLAY;
         }
-        return 0;
+        boolean shell = isShell(renderable);
+        boolean line = isLine(renderable);
+        if (!isBlended(renderable)) {
+            return line ? OPAQUE_WIREFRAME : OPAQUE_FILL;
+        }
+        if (shell) {
+            return line ? BLENDED_SHELL_WIREFRAME : BLENDED_SHELL_FILL;
+        }
+        return line ? BLENDED_BODY_WIREFRAME : BLENDED_BODY_FILL;
+    }
+
+    private boolean isShell(Renderable renderable) {
+        return renderable.material != null && shellMaterials.containsKey(renderable.material);
+    }
+
+    private boolean isOverlay(Renderable renderable) {
+        return renderable.material != null && overlayMaterials.containsKey(renderable.material);
+    }
+
+    private static boolean isLine(Renderable renderable) {
+        int primitiveType = renderable.meshPart.primitiveType;
+        return primitiveType == GL20.GL_LINES
+            || primitiveType == GL20.GL_LINE_LOOP
+            || primitiveType == GL20.GL_LINE_STRIP;
     }
 
     private static boolean isBlended(Renderable renderable) {

@@ -104,20 +104,27 @@ Units are classified recursively: each `floorN` container node (wherever it sits
 | Hitbox highlighted | SRC_ALPHA / ONE_MINUS_SRC_ALPHA, α=0.6 | accent color | no |
 | Hitbox normal | not rendered (`NodePart.enabled = false`) | — | — |
 
-Translucent surfaces never write depth (`DepthTestAttribute.depthMask = alpha >= 1`), otherwise the dimmed shell would occlude the floors inside it. Fully invisible units (hidden floors, non-highlighted hitboxes) are removed from rendering via `NodePart.enabled = false` once their fade-out settles.
+Body fills write depth only when fully opaque. Wireframes depth-test but never write depth. Shell color never writes depth: its nearest surface is recorded in a separate depth-only pass **after** the body color pass. Fully invisible units (hidden floors, non-highlighted hitboxes) are removed from rendering via `NodePart.enabled = false` once their fade-out settles.
 
-### Transparency ordering
+The global filled-polygon offset uses `factor = 0`, `units = 2`: the constant unit bias breaks the coplanar fill/line tie without the slope-dependent bias that can push large near-edge-on walls behind interior geometry.
 
-Default distance sorting breaks for nested geometry: the shell mesh's sorting center is the building centroid, so interior pieces on the camera side sort as closer and composite on top of the shell — interiors shine through at full strength while it fades in, then pop away when the original opaque material is restored. `BuildingRenderableSorter` (passed to `SceneManager` in `MapGame.create()`) enforces a fixed layer order instead:
+### Transparency and shell self-occlusion
 
-1. opaque geometry (front to back, depth written);
-2. building body layers — floors, dimmed shell copies — back to front;
-3. the outer shell, always last over the interior it encloses;
-4. the highlighted hitbox, an x-ray marker drawn with `GL_ALWAYS` depth test.
+Whole-mesh sorting cannot reject hidden triangles and edges inside the double-sided shell mesh. Turning off shell depth writes during a fade loses that self-occlusion. `BuildingSceneManager.renderColors()` therefore always uses these passes on the existing MSAA framebuffer:
 
-`RoomMaterialManager` registers every working material it hands out for the shell unit into `sorter.shellMaterials()` and for hitbox units into `sorter.overlayMaterials()` — both are `IdentityHashMap`s keyed by object identity, because `Material.equals` compares attribute *values*, which the manager mutates every frame, so hash-based collections silently misbehave here. With this order the composite is continuous all the way to alpha = 1 (blending with α=1 equals opaque rendering), so fades need no snapping.
+1. body fills and wireframes, sorted by `BuildingRenderableSorter`;
+2. shell filled geometry only, color writes disabled, `GL_LEQUAL`, depth writes enabled regardless of opacity;
+3. shell filled geometry with animated color/alpha, `GL_EQUAL`, no depth writes;
+4. shell wireframe, `GL_LEQUAL`, no depth writes;
+5. highlighted hitboxes, `GL_ALWAYS`, no depth writes.
 
-State changes do not snap: every unit animates its alpha / dim / highlight amount exponentially towards the target, advanced by `RoomMaterialManager.update(deltaTime)` from `MapGame.render()`. Once a non-hitbox unit settles back in the Normal state, its original material is restored — pixel-identical to the last blended frame.
+The shell path is the same at alpha 1 and during a fade. The body is rendered **before** shell depth, so its interior color remains available for blending. Depth is not cleared between passes: opaque body geometry nearer than the shell must still occlude it, including from inside the building. Hidden/zero-alpha shell parts do not write depth.
+
+`BuildingRenderPasses` stores stable `ModelInstance` / `Node` / `NodePart` bindings during the material manager's classification. It submits each enabled part only to its group; source-material replacement does not change membership. Cached pass-local shell materials preserve the source PBR features, update animated color/opacity, and differ only in their depth state and depth-pass opacity. Both passes use the same PBR vertex path and polygon offset for reliable `GL_EQUAL`; the standard packed-depth shader has a different vertex computation and is not used here.
+
+The sorter's legacy material maps remain `IdentityHashMap`s: `Material.equals` and `hashCode` depend on mutable attributes. They order renderables but are **not** a substitute for per-fragment shell self-occlusion.
+
+Animations retain exponential alpha/dim/highlight interpolation and the small settling epsilon. Normal source materials are restored immediately when settled; there is no extra `restorePending` frame or early-opacity threshold. Pass membership and shell depth/color policy remain unchanged at restoration. The renderer treats the shell as its nearest visible surface, not physically layered glass; exact coplanar duplicate shell triangles and translucent body geometry in front of the shell require separate treatment if encountered. Visual acceptance is required in addition to compilation and CPU regression checks.
 
 `BlendingAttribute` + `PBRColorAttribute.createBaseColorFactor` are set per-node via mutable `NodePart` materials. Materials are private copies per `ModelInstance`, so changes don't leak.
 

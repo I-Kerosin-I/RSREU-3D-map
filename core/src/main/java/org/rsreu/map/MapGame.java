@@ -12,8 +12,6 @@ import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.BufferUtils;
 import com.badlogic.gdx.utils.JsonValue;
 import net.mgsx.gltf.scene3d.scene.Scene;
-import net.mgsx.gltf.scene3d.scene.SceneManager;
-import net.mgsx.gltf.scene3d.shaders.PBRShaderProvider;
 import org.rsreu.map.application.port.CampusRepository;
 import org.rsreu.map.application.usecase.FindRoomsUseCase;
 import org.rsreu.map.controller.MapController;
@@ -25,6 +23,7 @@ import org.rsreu.map.domain.campus.CategoryTaxonomy;
 import org.rsreu.map.input.CameraInputController;
 import org.rsreu.map.input.RoomPicker;
 import org.rsreu.map.render.BuildingRenderableSorter;
+import org.rsreu.map.render.BuildingSceneManager;
 import org.rsreu.map.render.EdgeHighlighter;
 import org.rsreu.map.render.RoomHighlighter;
 import org.rsreu.map.render.RoomMaterialManager;
@@ -59,12 +58,12 @@ public class MapGame extends ApplicationAdapter {
      * push whole walls far too far back and let the wireframe shine through them.
      * A pure unit bias is enough to break an exact tie and is predictable.
      */
-    private static final float POLYGON_OFFSET_FACTOR = 1f;
+    private static final float POLYGON_OFFSET_FACTOR = 0f;
     private static final float POLYGON_OFFSET_UNITS = 2f;
 
     private PerspectiveCamera camera;
     private CameraInputController cameraController;
-    private SceneManager sceneManager;
+    private BuildingSceneManager sceneManager;
     /** Layered transparency order for the building units. */
     private BuildingRenderableSorter renderSorter;
 
@@ -107,11 +106,9 @@ public class MapGame extends ApplicationAdapter {
         cameraController = new CameraInputController();
         cameraController.setCamera(camera);
 
-        // Set up SceneManager with PBR rendering and the layered transparency
-        // sorter (the shell must composite over the interior it encloses).
+        // PBR rendering with a separate nearest-surface depth pass for the shell.
         renderSorter = new BuildingRenderableSorter();
-        sceneManager = new SceneManager(
-            PBRShaderProvider.createDefault(24), PBRShaderProvider.createDefaultDepth(24), renderSorter);
+        sceneManager = new BuildingSceneManager(renderSorter);
         sceneManager.setCamera(camera);
 
         // Set ambient light
@@ -242,6 +239,7 @@ private void logFramebuffer() {
 
             // Interactive floor isolation / room highlighting.
             roomMaterials = new RoomMaterialManager(scene.modelInstance, renderSorter);
+            sceneManager.setRenderPasses(roomMaterials.renderPasses());
             roomPicker = new RoomPicker(scene.modelInstance.nodes);
             roomHighlighter = new RoomHighlighter(camera, roomPicker, roomMaterials);
             cameraController.setRoomHighlighter(roomHighlighter);
@@ -279,6 +277,8 @@ private void logFramebuffer() {
         // Clear screen
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         Gdx.gl.glClearColor(0.25f, 0.25f, 0.35f, 1f);
+        Gdx.gl.glColorMask(true, true, true, true);
+        Gdx.gl.glDepthMask(true);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
 
@@ -292,9 +292,11 @@ private void logFramebuffer() {
         Gdx.gl.glEnable(GL20.GL_POLYGON_OFFSET_FILL);
         Gdx.gl.glPolygonOffset(POLYGON_OFFSET_FACTOR, POLYGON_OFFSET_UNITS);
 
-        sceneManager.render();
-
-        Gdx.gl.glDisable(GL20.GL_POLYGON_OFFSET_FILL);
+        try {
+            sceneManager.render();
+        } finally {
+            Gdx.gl.glDisable(GL20.GL_POLYGON_OFFSET_FILL);
+        }
 
         // UI overlay on top of the 3D scene
         if (hud != null) {

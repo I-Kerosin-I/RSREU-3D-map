@@ -30,12 +30,13 @@ import java.util.regex.Pattern;
  * {@link #update(float)} from the render loop, so dimming, hiding and highlights
  * all fade smoothly.
  * <p>
- * Visibility is only partly a material question. A translucent surface must not
- * write depth (it would occlude the geometry behind it), so animated materials
- * carry a {@link DepthTestAttribute} whose depth mask follows the opacity. And
- * geometry that is fully invisible — hitboxes that are not highlighted, floors
- * hidden by a selection — is taken out of rendering entirely by clearing
- * {@link NodePart#enabled}, because the hitbox materials of the GLB are opaque.
+ * Body translucency controls depth writes through its animated material. Shell
+ * self-occlusion is handled separately by {@link BuildingRenderPasses} and
+ * {@link BuildingSceneManager}: a body-first depth pass selects the nearest
+ * shell surface before its color and wireframe are composited. Geometry that
+ * is fully invisible — non-highlighted hitboxes and hidden floors — is taken
+ * out of rendering by clearing {@link NodePart#enabled}, because the hitbox
+ * materials of the GLB are opaque.
  * <p>
  * Materials of the {@link ModelInstance} are made private copies, so the
  * underlying model and other instances are never affected.
@@ -99,6 +100,7 @@ public final class RoomMaterialManager {
     }
 
     private final Array<Unit> units = new Array<>();
+    private final BuildingRenderPasses renderPasses;
 
     /** Layer sorter the working materials are registered with, may be null. */
     private final BuildingRenderableSorter sorter;
@@ -116,7 +118,12 @@ public final class RoomMaterialManager {
      */
     public RoomMaterialManager(ModelInstance instance, BuildingRenderableSorter sorter) {
         this.sorter = sorter;
+        renderPasses = new BuildingRenderPasses(instance);
         collectUnits(instance.nodes);
+    }
+
+    public BuildingRenderPasses renderPasses() {
+        return renderPasses;
     }
 
     /**
@@ -221,15 +228,17 @@ public final class RoomMaterialManager {
                 unit.dim = unit.targetDim;
                 unit.highlight = unit.targetHighlight;
                 unit.animating = false;
-            }
-            if (!unit.animating && !unit.hitbox && isRestNormal(unit)) {
-                restoreOriginals(unit);
-            } else {
-                writeAnimatedState(unit);
-                if (!unit.animating && unit.targetAlpha <= 0f && unit.alpha <= 0f) {
-                    // Invisible and staying that way: take it out of rendering.
-                    setPartsEnabled(unit, false);
+                if (!unit.hitbox && isRestNormal(unit)) {
+                    // The shell keeps its depth prepass even after restoration,
+                    // so changing materials does not change surface visibility.
+                    restoreOriginals(unit);
+                    continue;
                 }
+            }
+            writeAnimatedState(unit);
+            if (!unit.animating && unit.targetAlpha <= 0f && unit.alpha <= 0f) {
+                // Invisible and staying that way: take it out of rendering.
+                setPartsEnabled(unit, false);
             }
         }
     }
@@ -280,7 +289,7 @@ public final class RoomMaterialManager {
             }
             if (!isHitbox(node.id)) {
                 for (NodePart part : node.parts) {
-                    takePart(part, unit);
+                    takePart(node, part, unit);
                 }
             }
             if (node.hasChildren()) {
@@ -308,7 +317,7 @@ public final class RoomMaterialManager {
      */
     private void collectNodeParts(Node node, Unit unit) {
         for (NodePart part : node.parts) {
-            takePart(part, unit);
+            takePart(node, part, unit);
         }
         for (Node child : node.getChildren()) {
             if (isHitbox(child.id)) {
@@ -322,12 +331,17 @@ public final class RoomMaterialManager {
      * Adds a part to a unit and gives it a private material copy so state
      * changes never leak into the model or other instances.
      */
-    private void takePart(NodePart part, Unit unit) {
+    private void takePart(Node node, NodePart part, Unit unit) {
         if (part.material == null) {
             return;
         }
         part.material = new Material(part.material);
+        if (isLine(part)) {
+            // The wireframe is an accent overlay, never a depth occluder.
+            part.material.set(new DepthTestAttribute(GL20.GL_LEQUAL, false));
+        }
         unit.parts.add(part);
+        renderPasses.add(node, part, SHELL_UNIT_NAME.equals(unit.name), unit.hitbox);
         unit.originals.add(new Material(part.material));
         ColorAttribute colorAttribute = (ColorAttribute) part.material.get(PBRColorAttribute.BaseColorFactor);
         Color base = colorAttribute != null ? colorAttribute.color : null;
@@ -377,11 +391,19 @@ public final class RoomMaterialManager {
             && unit.targetHighlight == 0f;
     }
 
-    /** Swaps every part back to a pristine copy of its original material. */
+    /**
+     * Swaps every part back to a pristine copy of its original material. Lines
+     * remain depth-tested but never write depth, matching their animated overlay
+     * behavior and preventing them from occluding a later coplanar primitive.
+     */
     private void restoreOriginals(Unit unit) {
         for (int i = 0; i < unit.parts.size; i++) {
             NodePart part = unit.parts.get(i);
-            part.material = new Material(unit.originals.get(i));
+            Material material = new Material(unit.originals.get(i));
+            if (isLine(part)) {
+                material.set(new DepthTestAttribute(GL20.GL_LEQUAL, false));
+            }
+            part.material = material;
             part.enabled = true;
         }
     }
@@ -401,9 +423,11 @@ public final class RoomMaterialManager {
                 lerp(base.b * unit.dim, HIGHLIGHT_COLOR.b, unit.highlight),
                 1f);
             ((BlendingAttribute) material.get(BlendingAttribute.Type)).opacity = unit.alpha;
-            // A translucent surface must not write depth, or it occludes the
-            // geometry behind it; a fully opaque one keeps the depth writes.
-            ((DepthTestAttribute) material.get(DepthTestAttribute.Type)).depthMask = unit.alpha >= 1f;
+            // Transparent fills must not write depth, while a fully opaque fill
+            // resumes normal occlusion. Wireframes remain non-occluding overlays
+            // in every state and are ordered explicitly by the render sorter.
+            ((DepthTestAttribute) material.get(DepthTestAttribute.Type)).depthMask =
+                unit.alpha >= 1f && !isLine(unit.parts.get(i));
         }
     }
 
@@ -446,6 +470,13 @@ public final class RoomMaterialManager {
         for (int i = 0; i < unit.parts.size; i++) {
             unit.parts.get(i).enabled = enabled;
         }
+    }
+
+    private static boolean isLine(NodePart part) {
+        int primitiveType = part.meshPart.primitiveType;
+        return primitiveType == GL20.GL_LINES
+            || primitiveType == GL20.GL_LINE_LOOP
+            || primitiveType == GL20.GL_LINE_STRIP;
     }
 
     private static float lerp(float from, float to, float t) {
