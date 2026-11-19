@@ -16,10 +16,11 @@ public record MapUiState(
     List<Space> searchResults,
     String selectedRoomId,
     String selectedCategoryId,
-    String selectedSubcategoryId
+    String selectedSubcategoryId,
+    boolean editMode
 ) {
 
-    public static final MapUiState EMPTY = new MapUiState(List.of(), null, null, null);
+    public static final MapUiState EMPTY = new MapUiState(List.of(), null, null, null, false);
 
     public MapUiState {
         searchResults = searchResults == null ? List.of() : List.copyOf(searchResults);

@@ -21,14 +21,29 @@ import java.util.Optional;
  */
 public final class InMemoryCampusRepository implements CampusRepository {
 
-    private final Campus campus;
+    private Campus campus;
     private final Map<String, Space> spacesByNodeName = new HashMap<>();
 
     public InMemoryCampusRepository(Campus campus) {
+        this.campus = campus;
+        reindex();
+    }
+
+    /**
+     * Swaps the campus data and rebuilds the node name index. Used after the
+     * room editor persists changes, so the UI serves the fresh data without an
+     * application restart.
+     */
+    public void replaceCampus(Campus campus) {
         if (campus == null) {
             throw new IllegalArgumentException("Campus cannot be null");
         }
         this.campus = campus;
+        reindex();
+    }
+
+    private void reindex() {
+        spacesByNodeName.clear();
         for (Space space : campus.getAllSpaces()) {
             spacesByNodeName.put(space.modelNodeName(), space);
         }
@@ -42,6 +57,16 @@ public final class InMemoryCampusRepository implements CampusRepository {
     @Override
     public Optional<Space> findSpaceByNodeName(String modelNodeName) {
         return Optional.ofNullable(spacesByNodeName.get(modelNodeName));
+    }
+
+    /** Finds a space by its stable room id. */
+    public Optional<Space> findSpaceById(String roomId) {
+        if (roomId == null) {
+            return Optional.empty();
+        }
+        return campus.getAllSpaces().stream()
+            .filter(space -> space.id().value().equals(roomId))
+            .findFirst();
     }
 
     @Override

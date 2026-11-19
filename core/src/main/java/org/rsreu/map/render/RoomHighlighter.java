@@ -2,7 +2,9 @@ package org.rsreu.map.render;
 
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.collision.Ray;
+import org.rsreu.map.input.Picking;
 import org.rsreu.map.input.RoomPicker;
+import org.rsreu.map.input.WorkArea;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +26,7 @@ import java.util.Objects;
 public final class RoomHighlighter {
 
     private final PerspectiveCamera camera;
+    private final WorkArea workArea;
     private final RoomPicker picker;
     private final RoomMaterialManager materials;
 
@@ -38,8 +41,10 @@ public final class RoomHighlighter {
     /** Notified when the 3D side discards a UI-made selection (Escape, click). */
     private Runnable selectionClearedCallback;
 
-    public RoomHighlighter(PerspectiveCamera camera, RoomPicker picker, RoomMaterialManager materials) {
+    public RoomHighlighter(PerspectiveCamera camera, WorkArea workArea, RoomPicker picker,
+                           RoomMaterialManager materials) {
         this.camera = camera;
+        this.workArea = workArea;
         this.picker = picker;
         this.materials = materials;
     }
@@ -78,7 +83,7 @@ public final class RoomHighlighter {
             return;
         }
         camera.update();
-        String hitbox = pickVisibleHitbox(camera.getPickRay(screenX, screenY));
+        String hitbox = pickVisibleHitbox(Picking.getPickRay(camera, workArea, screenX, screenY));
 
         if (categoryHitboxes != null) {
             // Category mode: no floor isolation, the hover state only feeds the
@@ -132,7 +137,7 @@ public final class RoomHighlighter {
             return;
         }
         camera.update();
-        String hitbox = pickVisibleHitbox(camera.getPickRay(screenX, screenY));
+        String hitbox = pickVisibleHitbox(Picking.getPickRay(camera, workArea, screenX, screenY));
 
         if (hitbox != null) {
             boolean hadUiSelection = selectedHitbox != null || categoryHitboxes != null;

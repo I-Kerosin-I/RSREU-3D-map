@@ -88,11 +88,29 @@ public class CameraInputController extends InputAdapter {
 
     private PerspectiveCamera camera;
 
+    /** The 3D work area inside the window; picking rays are built against it. */
+    private final WorkArea workArea;
+
     /** Optional room interaction controller, wired by the game. */
     private RoomHighlighter roomHighlighter;
 
     /** Reports whether the UI currently claims the keyboard (text field focus). */
     private BooleanSupplier keyboardBlocked = () -> false;
+
+    /** Reports whether the room editor mode is active (right-click menus). */
+    private BooleanSupplier editModeSupplier = () -> false;
+
+    /**
+     * Receives right-clicks on a room while the editor mode is active; the
+     * orbit gesture is suppressed for that click.
+     */
+    public interface RoomContextMenuHandler {
+
+        void onRoomContextMenu(int screenX, int screenY);
+    }
+
+    private RoomContextMenuHandler roomContextMenuHandler = (screenX, screenY) -> {
+    };
 
     private float dragMovedSq;
 
@@ -130,8 +148,13 @@ public class CameraInputController extends InputAdapter {
     private boolean keyS;
     private boolean keyD;
 
-    public CameraInputController() {
+    /**
+     * @param workArea the 3D work area rectangle inside the window; the game
+     *                 keeps it in sync with the chrome bands every frame
+     */
+    public CameraInputController(WorkArea workArea) {
         super();
+        this.workArea = workArea;
     }
 
     public void setCamera(PerspectiveCamera camera) {
@@ -154,6 +177,17 @@ public class CameraInputController extends InputAdapter {
      */
     public void setKeyboardBlockedSupplier(BooleanSupplier blocked) {
         this.keyboardBlocked = blocked == null ? () -> false : blocked;
+    }
+
+    /** Wires the editor mode flag checked before showing room context menus. */
+    public void setEditModeSupplier(BooleanSupplier editModeSupplier) {
+        this.editModeSupplier = editModeSupplier == null ? () -> false : editModeSupplier;
+    }
+
+    /** Wires the handler of right-clicks on rooms (editor mode). */
+    public void setRoomContextMenuHandler(RoomContextMenuHandler handler) {
+        this.roomContextMenuHandler = handler == null ? (screenX, screenY) -> {
+        } : handler;
     }
 
     /**
@@ -209,6 +243,13 @@ public class CameraInputController extends InputAdapter {
             return true;
         }
         if (button == Input.Buttons.RIGHT) {
+            // In the editor mode a right-click on a room opens its context
+            // menu instead of starting the orbit gesture.
+            if (editModeSupplier.getAsBoolean() && roomHighlighter != null
+                && roomHighlighter.hoveredHitbox() != null) {
+                roomContextMenuHandler.onRoomContextMenu(screenX, screenY);
+                return true;
+            }
             orbiting = true;
             readOrientationFromCamera();
             updatePivot();
@@ -585,7 +626,7 @@ public class CameraInputController extends InputAdapter {
         if (camera == null) {
             return null;
         }
-        return camera.getPickRay(screenX, screenY);
+        return Picking.getPickRay(camera, workArea, screenX, screenY);
     }
 
     private static float clamp(float value, float min, float max) {

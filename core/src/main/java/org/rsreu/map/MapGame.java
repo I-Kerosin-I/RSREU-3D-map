@@ -18,10 +18,12 @@ import org.rsreu.map.controller.MapController;
 import org.rsreu.map.content.InMemoryCampusRepository;
 import org.rsreu.map.content.ManifestLoader;
 import org.rsreu.map.content.ManifestParser;
+import org.rsreu.map.content.ManifestStore;
 import org.rsreu.map.domain.campus.Campus;
 import org.rsreu.map.domain.campus.CategoryTaxonomy;
 import org.rsreu.map.input.CameraInputController;
 import org.rsreu.map.input.RoomPicker;
+import org.rsreu.map.input.WorkArea;
 import org.rsreu.map.render.BuildingRenderableSorter;
 import org.rsreu.map.render.BuildingSceneManager;
 import org.rsreu.map.render.EdgeHighlighter;
@@ -64,6 +66,12 @@ public class MapGame extends ApplicationAdapter {
     private PerspectiveCamera camera;
     private CameraInputController cameraController;
     private BuildingSceneManager sceneManager;
+
+    /**
+     * The 3D work area inside the window (GL coordinates): the window minus the
+     * classic chrome bands. Shared with the picking code, re-derived each frame.
+     */
+    private final WorkArea workArea = new WorkArea();
     /** Layered transparency order for the building units. */
     private BuildingRenderableSorter renderSorter;
 
@@ -81,6 +89,9 @@ public class MapGame extends ApplicationAdapter {
     /** Application state mediator shared by the UI and the 3D scene commands. */
     private MapController mapController;
 
+    /** Owns the raw manifest tree; the room editor persists changes through it. */
+    private ManifestStore manifestStore;
+
     /** Category tree of the object browser, parsed together with the manifest. */
     private CategoryTaxonomy taxonomy;
 
@@ -97,13 +108,13 @@ public class MapGame extends ApplicationAdapter {
 
         // Set up camera
         camera = new PerspectiveCamera(60f, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        camera.position.set(0f, 0.2f, 5f);
+        camera.position.set(0f, 0.6f, 5f);
         camera.lookAt(0f, 0f, 0f);
         camera.near = 0.1f;
         camera.far = 1000f;
 
         // Set up camera controller for mouse drag and WASD
-        cameraController = new CameraInputController();
+        cameraController = new CameraInputController(workArea);
         cameraController.setCamera(camera);
 
         // PBR rendering with a separate nearest-surface depth pass for the shell.
@@ -161,28 +172,38 @@ public class MapGame extends ApplicationAdapter {
             roomHighlighter.setSelectionClearedCallback(() -> mapController.sceneSelectionCleared());
         }
 
-        // UI overlay; the stage consumes input before the camera controller
+        // UI overlay; the stage consumes input before the camera controller.
+        // The floor id resolver translates a hitbox node name ("floor2") into
+        // the manifest floor id ("2") for the room editor prefill.
         uiTheme = new UiTheme();
-        hud = new MapHud(uiTheme, mapController, taxonomy);
+        hud = new MapHud(uiTheme, mapController, taxonomy, manifestStore, hitboxNodeName -> {
+            String floorNodeName = roomPicker == null ? null : roomPicker.floorOf(hitboxNodeName);
+            return floorNodeName == null ? null : floorNodeName.replaceFirst("floor", "");
+        });
         cameraController.setKeyboardBlockedSupplier(hud::isTextFieldFocused);
+        cameraController.setEditModeSupplier(hud::isEditMode);
+        cameraController.setRoomContextMenuHandler((screenX, screenY) ->
+            hud.showRoomContextMenu(screenX, screenY));
         Gdx.input.setInputProcessor(new InputMultiplexer(hud.getStage(), cameraController));
 
         Gdx.app.log("MapGame", "Application created successfully");
     }
 
     /**
-     * Parses manifest.json into the campus data. A missing or broken manifest
-     * degrades to an empty campus: the map still renders, the UI just has no
-     * metadata to show.
+     * Loads the manifest into the {@link ManifestStore}: the raw tree stays
+     * available for the room editor, the parsed campus feeds the UI. A missing
+     * or broken manifest degrades to an empty campus: the map still renders,
+     * the UI just has no metadata to show.
      */
     private Campus loadCampus() {
         try {
-            JsonValue root = new ManifestLoader().load();
-            ManifestParser parser = new ManifestParser();
-            taxonomy = parser.parseCategories(root);
-            return parser.parse(root);
+            manifestStore = new ManifestStore();
+            manifestStore.load();
+            taxonomy = manifestStore.taxonomy();
+            return manifestStore.campus();
         } catch (Exception e) {
             Gdx.app.error("MapGame", "Manifest unavailable, continuing without room metadata: " + e.getMessage(), e);
+            manifestStore = new ManifestStore();
             taxonomy = CategoryTaxonomy.EMPTY;
             return new Campus(List.of());
         }
@@ -221,6 +242,26 @@ private void logFramebuffer() {
         }
     }
 
+    /**
+     * Keeps the camera viewport and the GL viewport inside the 3D work area:
+     * the window minus the top chrome (menu bar, toolbar) and the status bar.
+     * The camera viewport fields are also what screen-space picking uses, so
+     * the rays stay aligned with what is on screen. Re-derived every frame:
+     * the chrome heights come from the laid-out UI actors.
+     */
+    private void updateWorkAreaViewport() {
+        int width = Gdx.graphics.getWidth();
+        int height = Gdx.graphics.getHeight();
+        int chromeTop = Math.round(hud.topChromeHeight());
+        int chromeBottom = Math.round(hud.bottomChromeHeight());
+        int viewportHeight = Math.max(1, height - chromeTop - chromeBottom);
+
+        camera.viewportWidth = width;
+        camera.viewportHeight = viewportHeight;
+        workArea.set(0, chromeBottom, width, viewportHeight);
+        Gdx.gl.glViewport(0, chromeBottom, width, viewportHeight);
+    }
+
     private void loadScene(String modelPath) {
         try {
             Scene scene = sceneLoader.loadScene(modelPath);
@@ -241,7 +282,7 @@ private void logFramebuffer() {
             roomMaterials = new RoomMaterialManager(scene.modelInstance, renderSorter);
             sceneManager.setRenderPasses(roomMaterials.renderPasses());
             roomPicker = new RoomPicker(scene.modelInstance.nodes);
-            roomHighlighter = new RoomHighlighter(camera, roomPicker, roomMaterials);
+            roomHighlighter = new RoomHighlighter(camera, workArea, roomPicker, roomMaterials);
             cameraController.setRoomHighlighter(roomHighlighter);
         } catch (Exception e) {
             Gdx.app.error("MapGame", "Could not load " + modelPath + ": " + e.getMessage(), e);
@@ -266,6 +307,11 @@ private void logFramebuffer() {
 
     @Override
     public void render() {
+        // The classic chrome owns the top and bottom bands of the window; the
+        // 3D camera and the GL viewport must stay inside the work area between
+        // them, otherwise projection, picking and rendering would misalign.
+        updateWorkAreaViewport();
+
         // Update camera based on input
         cameraController.update();
 
@@ -274,8 +320,7 @@ private void logFramebuffer() {
             roomMaterials.update(Gdx.graphics.getDeltaTime());
         }
 
-        // Clear screen
-        Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        // Clear screen (the chrome bands are covered by opaque UI afterwards)
         Gdx.gl.glClearColor(0.25f, 0.25f, 0.35f, 1f);
         Gdx.gl.glColorMask(true, true, true, true);
         Gdx.gl.glDepthMask(true);
@@ -306,14 +351,8 @@ private void logFramebuffer() {
 
     @Override
     public void resize(int width, int height) {
-        if (camera != null) {
-            camera.viewportWidth = width;
-            camera.viewportHeight = height;
-            camera.update();
-        }
-        if (sceneManager != null) {
-            sceneManager.updateViewport(width, height);
-        }
+        // The camera and GL viewport geometry is re-derived from the chrome
+        // band heights on every frame in render(); here only the UI re-layout.
         if (hud != null) {
             hud.resize(width, height);
         }

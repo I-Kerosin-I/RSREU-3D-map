@@ -1,11 +1,17 @@
 package org.rsreu.map.domain.campus;
 
-import org.rsreu.map.domain.geometry.Bounds3;
 import org.rsreu.map.domain.model.FloorId;
 import org.rsreu.map.domain.model.RoomId;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * Represents any navigable space: room, corridor, stairwell, elevator hall, etc.
+ * <p>
+ * Besides the display fields, a space carries optional structured attributes
+ * (seat count, equipment) and free-form key/value attributes for the room
+ * passport; all of them may be absent and are normalized to empty values.
  */
 public record Space(
     RoomId id,
@@ -13,10 +19,12 @@ public record Space(
     FloorId floorId,
     SpaceType type,
     String modelNodeName,
-    Bounds3 bounds,
     String description,
     String category,
-    String subcategory
+    String subcategory,
+    Integer seats,
+    List<String> equipment,
+    Map<String, String> attributes
 ) {
 
     public Space {
@@ -29,15 +37,7 @@ public record Space(
         if (modelNodeName == null || modelNodeName.isBlank()) {
             throw new IllegalArgumentException("Space modelNodeName cannot be null or blank");
         }
-        if (bounds == null) throw new IllegalArgumentException("Space bounds cannot be null");
-        // description, category and subcategory are optional and may be null
-    }
-
-    /**
-     * Convenience constructor for spaces without the optional metadata.
-     */
-    public Space(RoomId id, String displayName, FloorId floorId, SpaceType type,
-                 String modelNodeName, Bounds3 bounds) {
-        this(id, displayName, floorId, type, modelNodeName, bounds, null, null, null);
+        equipment = equipment == null ? List.of() : List.copyOf(equipment);
+        attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
     }
 }

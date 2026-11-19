@@ -1,7 +1,8 @@
 package org.rsreu.map.controller;
 
-import org.rsreu.map.application.port.CampusRepository;
 import org.rsreu.map.application.usecase.FindRoomsUseCase;
+import org.rsreu.map.content.InMemoryCampusRepository;
+import org.rsreu.map.domain.campus.Campus;
 import org.rsreu.map.domain.campus.Space;
 
 import java.util.ArrayList;
@@ -13,9 +14,10 @@ import java.util.function.Supplier;
  * Application-level mediator between the UI and the map data / 3D scene.
  * <p>
  * UI components issue commands ({@link #search}, {@link #selectObject},
- * {@link #clearSelection}) and listen for state changes; they never touch 3D
- * nodes directly. Commands that must affect the 3D scene are forwarded to
- * {@link MapActions}, implemented by the game layer (RoomHighlighter + camera).
+ * {@link #selectCategory}, {@link #setEditMode}) and listen for state changes;
+ * they never touch 3D nodes directly. Commands that must affect the 3D scene
+ * are forwarded to {@link MapActions}, implemented by the game layer
+ * (RoomHighlighter + camera).
  */
 public class MapController {
 
@@ -43,7 +45,7 @@ public class MapController {
     }
 
     private final FindRoomsUseCase findRooms;
-    private final CampusRepository campusRepository;
+    private final InMemoryCampusRepository campusRepository;
 
     private final List<StateListener> listeners = new ArrayList<>();
 
@@ -51,7 +53,7 @@ public class MapController {
     private Supplier<String> hoveredHitboxSupplier = () -> null;
     private MapUiState state = MapUiState.EMPTY;
 
-    public MapController(FindRoomsUseCase findRooms, CampusRepository campusRepository) {
+    public MapController(FindRoomsUseCase findRooms, InMemoryCampusRepository campusRepository) {
         if (findRooms == null) throw new IllegalArgumentException("FindRoomsUseCase cannot be null");
         if (campusRepository == null) throw new IllegalArgumentException("CampusRepository cannot be null");
         this.findRooms = findRooms;
@@ -87,6 +89,14 @@ public class MapController {
         return campusRepository.findSpaceByNodeName(hitboxNodeName);
     }
 
+    /** Finds a space by its stable room id. */
+    public Optional<Space> findSpaceById(String roomId) {
+        if (roomId == null || roomId.isBlank()) {
+            return Optional.empty();
+        }
+        return campusRepository.findSpaceById(roomId);
+    }
+
     /**
      * All spaces of a category (optionally of one subcategory), for the category
      * tree of the object browser panel.
@@ -102,20 +112,20 @@ public class MapController {
      */
     public void search(String query) {
         state = new MapUiState(findRooms.findByQuery(query), state.selectedRoomId(),
-            state.selectedCategoryId(), state.selectedSubcategoryId());
+            state.selectedCategoryId(), state.selectedSubcategoryId(), state.editMode());
         notifyListeners();
     }
 
     /**
      * Selects an object from the UI: publishes the selection and asks the 3D
-     * layer to lock its floor, highlight it and fly the camera to it. Re-selecting
-     * the already selected room re-runs the camera flight.
+     * layer to lock its floor, highlight it and fly the camera to it.
+     * Re-selecting the already selected room re-runs the camera flight.
      */
     public void selectObject(Space space) {
         if (space == null) {
             return;
         }
-        state = new MapUiState(state.searchResults(), space.id().value(), null, null);
+        state = new MapUiState(state.searchResults(), space.id().value(), null, null, state.editMode());
         if (actions != null) {
             actions.focusRoom(space.modelNodeName());
         }
@@ -132,7 +142,7 @@ public class MapController {
         if (spaces.isEmpty()) {
             return;
         }
-        state = new MapUiState(state.searchResults(), null, categoryId, subcategoryId);
+        state = new MapUiState(state.searchResults(), null, categoryId, subcategoryId, state.editMode());
         if (actions != null) {
             actions.focusCategory(spaces.stream().map(Space::modelNodeName).toList());
         }
@@ -148,7 +158,7 @@ public class MapController {
         if (state.selectedRoomId() == null && state.selectedCategoryId() == null) {
             return;
         }
-        state = new MapUiState(state.searchResults(), null, null, null);
+        state = new MapUiState(state.searchResults(), null, null, null, state.editMode());
         notifyListeners();
     }
 
@@ -160,10 +170,32 @@ public class MapController {
         if (state.selectedRoomId() == null && state.selectedCategoryId() == null) {
             return;
         }
-        state = new MapUiState(state.searchResults(), null, null, null);
+        state = new MapUiState(state.searchResults(), null, null, null, state.editMode());
         if (actions != null) {
             actions.clearFocus();
         }
+        notifyListeners();
+    }
+
+    /**
+     * Switches between the normal mode and the room editor mode. The edit mode
+     * enables the right-click room context menu.
+     */
+    public void setEditMode(boolean editMode) {
+        if (state.editMode() == editMode) {
+            return;
+        }
+        state = new MapUiState(state.searchResults(), state.selectedRoomId(),
+            state.selectedCategoryId(), state.selectedSubcategoryId(), editMode);
+        notifyListeners();
+    }
+
+    /**
+     * Swaps the campus data after the room editor persisted changes and
+     * republishes the state, so lists and the tree serve the fresh data.
+     */
+    public void replaceCampus(Campus campus) {
+        campusRepository.replaceCampus(campus);
         notifyListeners();
     }
 

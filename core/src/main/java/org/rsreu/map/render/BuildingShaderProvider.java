@@ -1,6 +1,5 @@
 package org.rsreu.map.render;
 
-import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Camera;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.g3d.Renderable;
@@ -66,14 +65,14 @@ public final class BuildingShaderProvider extends PBRShaderProvider {
     }
 
     /** Offset in clip Z: x is constant, y scales with clip W. */
-    static void edgeDepthOffset(Camera camera, int framebufferHeight, Vector2 out) {
+    static void edgeDepthOffset(Camera camera, int viewportHeight, Vector2 out) {
         float[] projection = camera.projection.val;
         float scaleY = Math.abs(projection[Matrix4.M11]);
         out.setZero();
-        if (framebufferHeight <= 0 || scaleY <= 0f) {
+        if (viewportHeight <= 0 || scaleY <= 0f) {
             return;
         }
-        float pixelSize = 2f * EDGE_BIAS_PIXELS / (framebufferHeight * scaleY);
+        float pixelSize = 2f * EDGE_BIAS_PIXELS / (viewportHeight * scaleY);
         if (projection[Matrix4.M32] != 0f) {
             // Perspective: moving a point toward the camera by a relative
             // distance changes only clip Z when its original X/Y/W are retained.
@@ -119,7 +118,10 @@ public final class BuildingShaderProvider extends PBRShaderProvider {
         public void begin(Camera camera, RenderContext context) {
             super.begin(camera, context);
             if (edgeDepthUniform >= 0) {
-                edgeDepthOffset(camera, Gdx.graphics.getBackBufferHeight(), edgeOffset);
+                // The bias is a screen-space quantity: it must follow the
+                // camera's render viewport, not the whole backbuffer (the
+                // classic chrome reserves window space around the work area).
+                edgeDepthOffset(camera, Math.round(camera.viewportHeight), edgeOffset);
                 set(edgeDepthUniform, edgeOffset.x, edgeOffset.y);
             }
         }

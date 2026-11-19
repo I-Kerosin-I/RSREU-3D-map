@@ -11,22 +11,19 @@ import org.rsreu.map.domain.campus.Floor;
 import org.rsreu.map.domain.campus.Space;
 import org.rsreu.map.domain.campus.SpaceType;
 import org.rsreu.map.domain.campus.SubcategoryDef;
-import org.rsreu.map.domain.geometry.Bounds3;
-import org.rsreu.map.domain.geometry.Point3;
 import org.rsreu.map.domain.model.BuildingId;
 import org.rsreu.map.domain.model.FloorId;
 import org.rsreu.map.domain.model.RoomId;
-import org.rsreu.map.domain.navigation.EdgeType;
-import org.rsreu.map.domain.navigation.NavigationEdge;
-import org.rsreu.map.domain.navigation.NavigationGraph;
-import org.rsreu.map.domain.navigation.NavigationNode;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Converts JsonValue manifest data to domain Campus object.
- * Currently creates a stub campus with hardcoded data.
+ * Falls back to a minimal stub campus when the manifest is broken, so the
+ * application keeps rendering without room metadata.
  */
 public class ManifestParser {
 
@@ -133,7 +130,6 @@ public class ManifestParser {
 
         if (id == null) return null;
 
-        // Parse spaces
         List<Space> spaces = new ArrayList<>();
         JsonValue spacesArray = floorValue.get("spaces");
         if (spacesArray != null) {
@@ -156,16 +152,42 @@ public class ManifestParser {
         String description = spaceValue.getString("description", null);
         String category = spaceValue.getString("category", null);
         String subcategory = spaceValue.getString("subcategory", null);
+        Integer seats = spaceValue.has("seats") ? spaceValue.getInt("seats") : null;
+        List<String> equipment = parseStringList(spaceValue.get("equipment"));
+        Map<String, String> attributes = parseAttributes(spaceValue.get("attributes"));
 
         if (id == null) return null;
 
         SpaceType type = parseSpaceType(typeStr);
 
-        // Parse bounds if present
-        Bounds3 bounds = parseBounds(spaceValue.get("bounds"));
+        return new Space(new RoomId(id), name, new FloorId(floorId), type, modelNode, description,
+            category, subcategory, seats, equipment, attributes);
+    }
 
-        return new Space(new RoomId(id), name, new FloorId(floorId), type, modelNode, bounds,
-            description, category, subcategory);
+    private List<String> parseStringList(JsonValue arrayValue) {
+        if (arrayValue == null || !arrayValue.isArray()) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        for (JsonValue value = arrayValue.child(); value != null; value = value.next()) {
+            if (value.isString()) {
+                values.add(value.asString());
+            }
+        }
+        return values;
+    }
+
+    private Map<String, String> parseAttributes(JsonValue objectValue) {
+        if (objectValue == null || !objectValue.isObject()) {
+            return Map.of();
+        }
+        Map<String, String> attributes = new LinkedHashMap<>();
+        for (JsonValue value = objectValue.child(); value != null; value = value.next()) {
+            if (value.name != null && !value.name.isBlank()) {
+                attributes.put(value.name, value.asString());
+            }
+        }
+        return attributes;
     }
 
     private SpaceType parseSpaceType(String typeStr) {
@@ -176,33 +198,6 @@ public class ManifestParser {
         }
     }
 
-    private Bounds3 parseBounds(JsonValue boundsValue) {
-        if (boundsValue == null) {
-            return new Bounds3(new Point3(0, 0, 0), new Point3(1, 1, 1));
-        }
-
-        Point3 min = parsePoint3(boundsValue.get("min"));
-        Point3 max = parsePoint3(boundsValue.get("max"));
-
-        if (min == null || max == null) {
-            return new Bounds3(new Point3(0, 0, 0), new Point3(1, 1, 1));
-        }
-
-        return new Bounds3(min, max);
-    }
-
-    private Point3 parsePoint3(JsonValue arrayValue) {
-        if (arrayValue == null || arrayValue.size < 3) {
-            return null;
-        }
-
-        float x = arrayValue.get(0).asFloat();
-        float y = arrayValue.get(1).asFloat();
-        float z = arrayValue.get(2).asFloat();
-
-        return new Point3(x, y, z);
-    }
-
     private Campus createStubCampus() {
         // Create a minimal stub campus for testing
         Space stubSpace = new Space(
@@ -211,7 +206,12 @@ public class ManifestParser {
             new FloorId("1"),
             SpaceType.ROOM,
             "test_node",
-            new Bounds3(new Point3(0, 0, 0), new Point3(1, 1, 1))
+            null,
+            null,
+            null,
+            null,
+            List.of(),
+            Map.of()
         );
 
         Floor stubFloor = new Floor(
