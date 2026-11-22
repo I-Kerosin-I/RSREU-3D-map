@@ -22,15 +22,22 @@ public final class SearchBar {
     private final TextField field;
 
     public SearchBar(UiTheme theme, MapController controller) {
-        field = new TextField("", theme.skin(), "bare");
+        TextField.TextFieldStyle style = new TextField.TextFieldStyle(
+            theme.skin().get("bare", TextField.TextFieldStyle.class));
+        style.background = theme.flat(new com.badlogic.gdx.graphics.Color(0, 0, 0, 0));
+        style.focusedBackground = style.background;
+        field = new TextField("", style);
         field.setMessageText("Поиск объектов…");
 
         wrapper = new Table();
         wrapper.setBackground(theme.fieldBackground());
+        wrapper.pad(0f, 0f, 0f, UiTheme.SPACE_S);
 
+        float iconInset = (PanelToggleButton.HEIGHT - 14f) / 2f;
         Image icon = new Image(theme.skin(), "icon-search");
-        wrapper.add(icon).size(14f).padLeft(UiTheme.SPACE_M + 2).padRight(UiTheme.SPACE_S);
-        wrapper.add(field).growX().height(UiTheme.CONTROL_H);
+        wrapper.add(icon).size(14f).pad(iconInset);
+        wrapper.add(field).minWidth(field.getPrefWidth() * 0.75f)
+            .growX().height(PanelToggleButton.HEIGHT);
 
         field.addListener(new ChangeListener() {
             @Override

@@ -2,6 +2,7 @@ package org.rsreu.map.ui;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.scenes.scene2d.Actor;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.InputListener;
@@ -20,6 +21,7 @@ import org.rsreu.map.controller.MapController;
 import org.rsreu.map.content.ManifestStore;
 import org.rsreu.map.domain.campus.CategoryTaxonomy;
 import org.rsreu.map.domain.campus.Space;
+import org.rsreu.map.input.WorkArea;
 import org.rsreu.map.schedule.RsreuScheduleService;
 
 import java.util.function.Function;
@@ -42,8 +44,22 @@ public final class MapHud implements Disposable {
 
     private static final float PANEL_WIDTH = 304f;
     private static final float SCHEDULE_WIDTH = 356f;
+    private static final float MIN_OBJECTS_WIDTH = 240f;
+    private static final float MIN_SCHEDULE_WIDTH = 280f;
+    private static final float MIN_WORK_WIDTH = 400f;
+    private static final float MIN_COMPACT_WORK_WIDTH = 120f;
 
     private final Stage stage;
+    private final Table root;
+    private final Table contentRegion;
+    private final Table workRegion;
+    private final Table objectsDock;
+    private final Table scheduleDock;
+    private final Vector2 coordinates = new Vector2();
+    private float objectsWidth = PANEL_WIDTH;
+    private float scheduleWidth = SCHEDULE_WIDTH;
+    private float displayedObjectsWidth = PANEL_WIDTH;
+    private float displayedScheduleWidth = SCHEDULE_WIDTH;
     private final MapController controller;
     private final ManifestStore manifestStore;
     private final Function<String, String> floorIdResolver;
@@ -128,20 +144,18 @@ public final class MapHud implements Disposable {
         // Initialize the mode menu before the first state change.
         topBar.setEditMode(controller.getState().editMode());
 
-        Table root = new Table();
+        root = new Table();
         root.setFillParent(true);
-        // The root only hosts the chrome and the floating panels; it must never
-        // be hit by stage.hit itself, otherwise every point of the screen would
-        // count as "over the UI". childrenOnly keeps the children interactive.
+        // Only the central work region is click-through; docked panels are UI.
         root.setTouchable(Touchable.childrenOnly);
         stage.addActor(root);
 
-        Table contentRegion = new Table();
+        contentRegion = new Table();
         contentRegion.setTouchable(Touchable.childrenOnly);
 
         objectsPanel = new Table();
         objectsPanel.setBackground(theme.leftPanelBackground());
-        objectsPanel.pad(UiTheme.SPACE_M);
+        objectsPanel.pad(UiTheme.SPACE_M, UiTheme.SPACE_S, UiTheme.SPACE_M, UiTheme.SPACE_S);
         objectsToggle = new PanelToggleButton(theme, false,
             () -> setObjectsPanelVisible(!objectsPanel.isVisible()));
         scheduleToggle = new PanelToggleButton(theme, false,
@@ -158,25 +172,34 @@ public final class MapHud implements Disposable {
         objectsPanel.add(searchRow).growX().padBottom(UiTheme.SPACE_S);
         objectsPanel.row();
 
-        // While a query is typed the results replace the category tree; the
-        // Stack keeps the panel layout stable in both modes. The scroll panes
-        // react to input only over their rows: the empty area lets clicks and
-        // the mouse wheel through to the 3D scene.
+        // Search results and the tree share the same bounded panel.
         Stack stack = new Stack();
         browserScroll = browserPanel.getActor();
-        resultsScroll = new ContentScrollPane(resultsPanel.getActor(), theme.skin());
+        resultsScroll = new ContentScrollPane(resultsPanel.getActor(), theme.skin(), false);
         resultsScroll.setFadeScrollBars(false);
         stack.add(browserScroll);
         stack.add(resultsScroll);
         resultsScroll.setVisible(false);
         objectsPanel.add(stack).grow();
 
-        objectsCell = contentRegion.add((Actor) objectsPanel).width(PANEL_WIDTH).growY()
+        objectsDock = new Table();
+        objectsDock.setClip(true);
+        objectsDock.add(objectsPanel).minWidth(0f).grow();
+        objectsDock.add(new PanelResizeHandle(theme, true, () -> displayedObjectsWidth,
+            value -> resizePanel(true, (float) value))).width(PanelResizeHandle.WIDTH).growY();
+        scheduleDock = new Table();
+        scheduleDock.setClip(true);
+        scheduleDock.add(new PanelResizeHandle(theme, false, () -> displayedScheduleWidth,
+            value -> resizePanel(false, (float) value))).width(PanelResizeHandle.WIDTH).growY();
+        scheduleDock.add(schedulePanel.getActor()).minWidth(0f).grow();
+
+        workRegion = new Table();
+        workRegion.setTouchable(Touchable.disabled);
+        objectsCell = contentRegion.add((Actor) objectsDock).width(PANEL_WIDTH).growY()
             .align(Align.topLeft);
-        contentRegion.add().expandX();
-        scheduleCell = contentRegion.add((Actor) schedulePanel.getActor()).width(SCHEDULE_WIDTH)
+        contentRegion.add(workRegion).grow();
+        scheduleCell = contentRegion.add((Actor) scheduleDock).width(SCHEDULE_WIDTH)
             .growY().align(Align.topRight);
-        setSchedulePanelVisible(false);
 
         root.add(topBar.getActor()).growX();
         root.row();
@@ -185,6 +208,7 @@ public final class MapHud implements Disposable {
         root.add(statusBar.getActor()).growX();
 
         stage.addActor(tooltip.getActor());
+        setSchedulePanelVisible(false);
 
         controller.addStateListener(state -> {
             resultsPanel.update(state.searchResults());
@@ -235,42 +259,35 @@ public final class MapHud implements Disposable {
         return controller.getState().editMode();
     }
 
-    /**
-     * Swaps the objects panel with its collapse toggle. The toggle lives in the
-     * search row while the panel is open and takes the hidden panel's spot
-     * while collapsed, inset by the same panel padding: it never presses
-     * against the window edge and keeps its height in both states.
-     */
+    /** Collapsed controls float over the scene without reserving a dock column. */
     private void setObjectsPanelVisible(boolean visible) {
         if (visible) {
-            objectsCell.setActor(objectsPanel).width(PANEL_WIDTH).height(0f).pad(0f);
+            objectsCell.setActor(objectsDock).width(displayedObjectsWidth).height(0f).pad(0f);
             searchToggleCell.setActor(objectsToggle);
         } else {
             searchToggleCell.clearActor();
-            objectsCell.setActor(objectsToggle).width(28f).height(36f).pad(UiTheme.SPACE_M);
+            objectsCell.clearActor().width(0f).height(0f).pad(0f);
+            stage.addActor(objectsToggle);
         }
         objectsPanel.setVisible(visible);
         objectsPanel.setTouchable(visible ? Touchable.enabled : Touchable.disabled);
         objectsToggle.setPointsRight(!visible);
         topBar.setObjectsVisible(visible);
+        layoutWorkspace();
     }
 
-    /**
-     * Swaps the schedule panel with its collapse toggle. The toggle lives in
-     * the panel's header while open and takes the hidden panel's spot while
-     * collapsed, inset by the same panel padding: same distance from the
-     * window edge, same height in both states.
-     */
     private void setSchedulePanelVisible(boolean visible) {
         if (visible) {
-            scheduleCell.setActor(schedulePanel.getActor()).width(SCHEDULE_WIDTH).height(0f).pad(0f);
+            scheduleCell.setActor(scheduleDock).width(displayedScheduleWidth).height(0f).pad(0f);
             schedulePanel.setCollapseButton(scheduleToggle);
         } else {
-            scheduleCell.setActor(scheduleToggle).width(28f).height(36f).pad(UiTheme.SPACE_M);
+            scheduleCell.clearActor().width(0f).height(0f).pad(0f);
+            stage.addActor(scheduleToggle);
         }
         schedulePanel.setVisible(visible);
         scheduleToggle.setPointsRight(visible);
         topBar.setScheduleVisible(visible);
+        layoutWorkspace();
         if (visible) {
             schedulePanel.showForRoom(controller.findSpaceById(
                 controller.getState().selectedRoomId()).orElse(null));
@@ -353,14 +370,107 @@ public final class MapHud implements Disposable {
         return stage.getKeyboardFocus() instanceof TextField;
     }
 
-    /** Advances and draws the UI. Called from the render loop after the 3D scene. */
-    public void actAndDraw(float delta) {
+    private void resizePanel(boolean objects, float requestedWidth) {
+        float opposite = objects
+            ? (schedulePanel.isVisible() ? displayedScheduleWidth : 0f)
+            : (objectsPanel.isVisible() ? displayedObjectsWidth : 0f);
+        float maximum = Math.max(0f, stage.getWidth() - opposite - reservedWorkWidth());
+        float minimum = objects ? MIN_OBJECTS_WIDTH : MIN_SCHEDULE_WIDTH;
+        float width = Math.max(minimum, Math.min(requestedWidth, maximum));
+        // Start from both currently displayed widths, not the other dock's
+        // unconstrained preference: dragging must follow the pointer on small windows.
+        if (objects) {
+            objectsWidth = width;
+            if (schedulePanel.isVisible()) scheduleWidth = displayedScheduleWidth;
+        } else {
+            scheduleWidth = width;
+            if (objectsPanel.isVisible()) objectsWidth = displayedObjectsWidth;
+        }
+        layoutWorkspace();
+    }
+
+    private float reservedWorkWidth() {
+        float minimumDocks = (objectsPanel.isVisible() ? MIN_OBJECTS_WIDTH : 0f)
+            + (schedulePanel.isVisible() ? MIN_SCHEDULE_WIDTH : 0f);
+        return Math.min(MIN_WORK_WIDTH, Math.max(MIN_COMPACT_WORK_WIDTH, stage.getWidth() - minimumDocks));
+    }
+
+    /** Resolves dock widths before camera projection or input reads the layout. */
+    public void layoutWorkspace() {
+        float width = stage.getWidth();
+        boolean objectsOpen = objectsPanel.isVisible();
+        boolean scheduleOpen = schedulePanel.isVisible();
+        // A tiny window hides docks rather than crushing their controls or grips.
+        if (objectsOpen && scheduleOpen && width < MIN_OBJECTS_WIDTH + MIN_SCHEDULE_WIDTH + MIN_COMPACT_WORK_WIDTH) {
+            setSchedulePanelVisible(false);
+            return;
+        }
+        if (objectsOpen && width < MIN_OBJECTS_WIDTH + MIN_COMPACT_WORK_WIDTH) {
+            setObjectsPanelVisible(false);
+            return;
+        }
+        if (scheduleOpen && width < MIN_SCHEDULE_WIDTH + MIN_COMPACT_WORK_WIDTH) {
+            setSchedulePanelVisible(false);
+            return;
+        }
+        float budget = Math.max(0f, width - reservedWorkWidth());
+        float leftMin = objectsOpen ? MIN_OBJECTS_WIDTH : 0f;
+        float rightMin = scheduleOpen ? MIN_SCHEDULE_WIDTH : 0f;
+        float left = objectsOpen ? Math.max(leftMin, objectsWidth) : 0f;
+        float right = scheduleOpen ? Math.max(rightMin, scheduleWidth) : 0f;
+        if (left + right > budget) {
+            float minima = leftMin + rightMin;
+            float excess = left + right - minima;
+            float scale = excess == 0f ? 0f : Math.max(0f, (budget - minima) / excess);
+            left = leftMin + (left - leftMin) * scale;
+            right = rightMin + (right - rightMin) * scale;
+        }
+        if (objectsOpen) objectsCell.width(left);
+        if (scheduleOpen) scheduleCell.width(right);
+        displayedObjectsWidth = left;
+        displayedScheduleWidth = right;
+        contentRegion.invalidateHierarchy();
+        root.validate();
+        contentRegion.validate();
+        objectsDock.validate();
+        objectsPanel.validate();
+        searchRow.validate();
+        scheduleDock.validate();
+        ((Table) schedulePanel.getActor()).validate();
+        float toggleY = stage.getHeight() - topChromeHeight() - UiTheme.SPACE_M - PanelToggleButton.HEIGHT;
+        if (!objectsOpen) {
+            objectsToggle.setBounds(UiTheme.SPACE_M, toggleY, PanelToggleButton.WIDTH, PanelToggleButton.HEIGHT);
+        }
+        if (!scheduleOpen) {
+            scheduleToggle.setBounds(stage.getWidth() - UiTheme.SPACE_M - PanelToggleButton.WIDTH,
+                toggleY, PanelToggleButton.WIDTH, PanelToggleButton.HEIGHT);
+        }
+    }
+
+    /** Copies the central rectangle in logical GL coordinates (bottom-left origin). */
+    public void updateWorkArea(WorkArea area) {
+        layoutWorkspace();
+        workRegion.localToStageCoordinates(coordinates.setZero());
+        area.set(Math.round(coordinates.x), Math.round(coordinates.y),
+            Math.max(1, Math.round(workRegion.getWidth())), Math.max(1, Math.round(workRegion.getHeight())));
+    }
+
+    /** UI overlays and docked regions must not receive 3D pointer interactions. */
+    public boolean isPointerOverUi(int screenX, int screenY) {
+        stage.screenToStageCoordinates(coordinates.set(screenX, screenY));
+        return stage.hit(coordinates.x, coordinates.y, true) != null;
+    }
+
+    /** Advances UI once before deriving the scene viewport. */
+    public void act(float delta) {
+        layoutWorkspace();
         stage.act(delta);
         statusBar.act(delta);
+    }
+
+    /** Draws over the whole window after the central 3D pass. */
+    public void draw() {
         updateHoverInfo();
-        // The 3D pass leaves the GL viewport at the work-area rectangle. The
-        // stage must draw over the whole window: it does not re-apply its own
-        // viewport inside draw(), so restore the full-window rectangle here.
         stage.getViewport().apply();
         stage.draw();
     }
@@ -399,6 +509,7 @@ public final class MapHud implements Disposable {
 
     public void resize(int width, int height) {
         stage.getViewport().update(width, height, true);
+        layoutWorkspace();
     }
 
     private void refreshSearchMode() {

@@ -97,6 +97,7 @@ public final class UiTheme implements Disposable {
     private final Drawable tooltipBackground;
     private final Drawable popupBackground;
     private final Drawable cardBackground;
+    private final Drawable rowIdle;
     private final Drawable rowHover;
     private final Drawable rowSelected;
     private final Drawable fieldBackground;
@@ -129,9 +130,11 @@ public final class UiTheme implements Disposable {
         skin.add("popup_bg", popupBackground);
         cardBackground = rounded(SURFACE, RADIUS_L);
         skin.add("card_bg", cardBackground);
+        rowIdle = roundedPadded(new Color(0, 0, 0, 0), RADIUS_S, SPACE_S, SPACE_XS);
+        skin.add("row_idle", rowIdle);
         rowHover = roundedPadded(SURFACE_HOVER, RADIUS_S, SPACE_S, SPACE_XS);
         skin.add("row_hover", rowHover);
-        rowSelected = roundedPadded(SELECTED_BG, RADIUS_S, SPACE_S, SPACE_XS);
+        rowSelected = roundedBorderedPadded(SELECTED_BG, ACCENT, RADIUS_S, SPACE_S, SPACE_XS);
         skin.add("row_selected", rowSelected);
         fieldBackground = roundedBordered(SURFACE, BORDER, RADIUS_M);
         skin.add("field_bg", fieldBackground);
@@ -191,6 +194,11 @@ public final class UiTheme implements Disposable {
     /** Rounded surface of a compact information card (schedule lessons etc.). */
     public Drawable cardBackground() {
         return cardBackground;
+    }
+
+    /** Transparent idle state with the same metrics as hover and selection. */
+    public Drawable rowIdle() {
+        return rowIdle;
     }
 
     /** Rounded hover highlight of a tree / list row. */
@@ -548,7 +556,7 @@ public final class UiTheme implements Disposable {
         // Two straight strokes meeting at the middle: ">" collapsed, "v" expanded.
         float x1 = expanded ? 2.5f : 3.5f, y1 = 2.5f;
         float x2 = expanded ? 5f : 7.5f, y2 = 5f;
-        float x3 = expanded ? 7.5f : 3.5f, y3 = 7.5f;
+        float x3 = expanded ? 7.5f : 3.5f, y3 = expanded ? 2.5f : 7.5f;
         stroke(pixmap, scale, x1, y1, x2, y2, 0.9f);
         stroke(pixmap, scale, x2, y2, x3, y3, 0.9f);
         Texture texture = new Texture(pixmap);

@@ -52,7 +52,7 @@ public final class SchedulePanel {
 
         table = new Table();
         table.setBackground(theme.rightPanelBackground());
-        table.pad(UiTheme.SPACE_M);
+        table.pad(UiTheme.SPACE_M, UiTheme.SPACE_S, UiTheme.SPACE_M, UiTheme.SPACE_S);
 
         TextButton refreshButton = new TextButton("Обновить", theme.skin(), "compact");
         refreshButton.addListener(new ClickListener() {

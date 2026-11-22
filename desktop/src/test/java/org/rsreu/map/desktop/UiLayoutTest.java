@@ -19,6 +19,10 @@ import org.rsreu.map.controller.MapController;
 import org.rsreu.map.domain.campus.Campus;
 import org.rsreu.map.domain.campus.CategoryTaxonomy;
 import org.rsreu.map.ui.MapHud;
+import org.rsreu.map.ui.PanelResizeHandle;
+import org.rsreu.map.input.WorkArea;
+import com.badlogic.gdx.scenes.scene2d.InputEvent;
+import com.badlogic.gdx.Input;
 import org.rsreu.map.ui.PanelToggleButton;
 import org.rsreu.map.ui.UiTheme;
 
@@ -60,6 +64,10 @@ public final class UiLayoutTest {
             Stage stage = hud.getStage();
             layout(stage);
             checkMenuLabels(stage.getRoot());
+            WorkArea area = new WorkArea();
+            hud.updateWorkArea(area);
+            require(area.x == 304, "left dock excluded from the viewport before drawing");
+            require(area.width == 1280 - 304, "collapsed right panel reserves no viewport width");
 
             List<PanelToggleButton> buttons = new ArrayList<>();
             collect(stage.getRoot(), buttons);
@@ -95,8 +103,8 @@ public final class UiLayoutTest {
                 layout(stage);
                 checkSize(right);
                 require(right.isVisible(), "toggled right control is visible");
-                require(close(position(right).x, stage.getWidth() - 12 - PanelToggleButton.WIDTH),
-                    "right control in its header spot");
+                require(close(position(right).x, stage.getWidth() - 8 - PanelToggleButton.WIDTH),
+                    "right control in its compact header spot: " + position(right).x);
                 rightHeader = position(right);
                 require(hitTest(stage, right), "toggled right control is hitable");
                 System.out.println("right collapsed: pointsRight=" + right.isPointsRight() + " sameArrow=" + (arrowOf(right) == rightArrow));
@@ -115,17 +123,121 @@ public final class UiLayoutTest {
                 require(arrowOf(left) == leftArrow && arrowOf(right) == rightArrow, "arrows restore");
                 require(close(position(right).y, rightHeader.y),
                     "collapsed right control keeps its header height");
+                left.fire(new ChangeEvent());
+                hud.updateWorkArea(area);
+                require(area.x == 0 && area.width == stage.getWidth(),
+                    "both collapsed panels expose the full viewport width");
+                require(hitTest(stage, left) && hitTest(stage, right), "floating toggles remain interactive");
+                left.fire(new ChangeEvent());
+                hud.layoutWorkspace();
             }
-            stage.getViewport().update(960, 600, true);
+            hud.resize(960, 600);
             layout(stage);
             checkSize(left);
             checkSize(right);
             require(close(position(right).x, 960 - 12 - PanelToggleButton.WIDTH),
                 "right control follows resize");
+            checkDockResize(hud, left, right);
+            System.out.println("UiLayoutTest: dock resize and central bounds passed");
         } finally {
             hud.dispose();
             theme.dispose();
         }
+    }
+
+    private static void checkDockResize(MapHud hud, PanelToggleButton left, PanelToggleButton right) {
+        Stage stage = hud.getStage();
+        hud.resize(1280, 720);
+        right.fire(new ChangeEvent());
+        WorkArea area = new WorkArea();
+        hud.updateWorkArea(area);
+        require(area.x == 304 && area.width == 620, "both expanded docks reserve exact viewport bounds");
+        List<PanelResizeHandle> handles = new ArrayList<>();
+        collectHandles(stage.getRoot(), handles);
+        require(handles.size() == 2, "two dock resize handles");
+        handles.sort(java.util.Comparator.comparingDouble(handle -> position(handle).x));
+        dragHandle(handles.get(0), 80);
+        hud.updateWorkArea(area);
+        require(area.x == 384 && area.width == 540,
+            "left splitter increases left dock width: " + area.x + "," + area.width);
+        dragHandle(handles.get(1), -50);
+        hud.updateWorkArea(area);
+        require(area.x == 384 && area.width == 490, "right splitter expands toward the left");
+        float toggleY = position(left).y;
+        left.fire(new ChangeEvent());
+        hud.updateWorkArea(area);
+        require(area.x == 0, "collapsed left panel reserves no viewport width");
+        require(close(position(left).y, toggleY), "resized left panel collapses without vertical jump");
+        left.fire(new ChangeEvent());
+        hud.updateWorkArea(area);
+        require(area.x == 384, "left width restored after expansion");
+        dragHandle(handles.get(0), 10000);
+        hud.updateWorkArea(area);
+        require(area.width >= 400, "dragging cannot consume the central workspace");
+        dragHandle(handles.get(0), -10000);
+        hud.updateWorkArea(area);
+        require(area.x == 240, "left minimum width respected");
+        require(hitTest(stage, handles.get(0)), "left grip remains accessible at minimum width");
+        dragHandle(handles.get(0), 20);
+        hud.updateWorkArea(area);
+        require(area.x == 260, "minimum-width grip can be grabbed again");
+        dragHandle(handles.get(0), -20);
+        dragHandle(handles.get(1), 10000);
+        hud.updateWorkArea(area);
+        require(1280 - area.x - area.width == 280, "right minimum width respected");
+        require(hitTest(stage, handles.get(1)), "right grip remains accessible at minimum width");
+        dragHandle(handles.get(1), -20);
+        hud.updateWorkArea(area);
+        require(1280 - area.x - area.width == 300, "right grip can be grabbed again");
+        hud.resize(700, 500);
+        hud.updateWorkArea(area);
+        require(area.x >= 240 && 700 - area.x - area.width >= 280,
+            "small window preserves readable panel minima before shrinking center");
+        require(area.width > 0 && area.x + area.width <= 700, "small window has valid central bounds");
+        hud.resize(1280, 720);
+        hud.updateWorkArea(area);
+        require(area.x == 240, "preferred width survives window resize");
+        int screenY = Gdx.graphics.getHeight() - (area.y + area.height / 2);
+        require(hud.isPointerOverUi(100, screenY), "empty dock surface blocks the map");
+        require(!hud.isPointerOverUi(area.x + area.width / 2, screenY), "central workspace is click-through");
+        hud.resize(400, 400);
+        hud.updateWorkArea(area);
+        require(area.width > 0 && area.x + area.width <= 400, "very small window keeps a bounded viewport");
+        require(!right.isPointsRight(), "tiny window collapses right panel instead of crushing controls");
+        int tinyY = Gdx.graphics.getHeight() - (area.y + area.height / 2);
+        require(!hud.isPointerOverUi(area.x + area.width / 2, tinyY), "clipped docks cannot cover tiny workspace");
+        hud.resize(900, 600);
+        hud.updateWorkArea(area);
+        float beforeDrag = area.x;
+        dragHandle(handles.get(0), 8);
+        hud.updateWorkArea(area);
+        require(area.x >= beforeDrag, "constrained splitter never moves opposite to pointer");
+        hud.resize(1280, 720);
+    }
+
+    private static void collectHandles(Group group, List<PanelResizeHandle> result) {
+        for (Actor actor : group.getChildren()) {
+            if (actor instanceof PanelResizeHandle handle) result.add(handle);
+            else if (actor instanceof Group child) collectHandles(child, result);
+        }
+    }
+
+    private static void dragHandle(PanelResizeHandle handle, float delta) {
+        Vector2 start = position(handle).add(handle.getWidth() / 2, handle.getHeight() / 2);
+        firePointer(handle, InputEvent.Type.touchDown, start.x, start.y);
+        firePointer(handle, InputEvent.Type.touchDragged, start.x + delta, start.y);
+        firePointer(handle, InputEvent.Type.touchUp, start.x + delta, start.y);
+    }
+
+    private static void firePointer(Actor actor, InputEvent.Type type, float x, float y) {
+        InputEvent event = new InputEvent();
+        event.setType(type);
+        event.setStage(actor.getStage());
+        event.setStageX(x);
+        event.setStageY(y);
+        event.setPointer(0);
+        event.setButton(Input.Buttons.LEFT);
+        actor.fire(event);
     }
 
     /** The menu labels must sit in the center of their highlight boxes. */

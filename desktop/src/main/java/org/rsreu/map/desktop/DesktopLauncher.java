@@ -15,8 +15,8 @@ import org.rsreu.map.MapGame;
  */
 public class DesktopLauncher {
 
-    private static final int WIDTH = 1280;
-    private static final int HEIGHT = 720;
+    private static final int WIDTH = 1440;
+    private static final int HEIGHT = 900;
 
     /**
      * Multisample count of the back buffer. libGDX defaults to 0, which means no
@@ -49,7 +49,10 @@ public class DesktopLauncher {
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setTitle("RSREU 3D Map");
         config.setWindowIcon(WINDOW_ICONS);
-        config.setWindowedMode(WIDTH, HEIGHT);
+        com.badlogic.gdx.Graphics.DisplayMode display = Lwjgl3ApplicationConfiguration.getDisplayMode();
+        int width = Math.min(WIDTH, display.width - Math.min(80, display.width / 10));
+        int height = Math.min(HEIGHT, display.height - Math.min(120, display.height / 10));
+        config.setWindowedMode(Math.max(1, width), Math.max(1, height));
         // red, green, blue, alpha, depth, stencil, samples
         config.setBackBufferConfig(8, 8, 8, 8, DEPTH_BITS, 0, SAMPLES);
         config.useVsync(true);

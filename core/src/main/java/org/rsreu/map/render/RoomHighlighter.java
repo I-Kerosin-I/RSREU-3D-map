@@ -1,5 +1,6 @@
 package org.rsreu.map.render;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.collision.Ray;
 import org.rsreu.map.input.Picking;
@@ -92,6 +93,10 @@ public final class RoomHighlighter {
      * cursor only controls the hover highlight, the UI-selected room stays lit.
      */
     public void onMouseMoved(int screenX, int screenY) {
+        if (!workArea.containsScreen(screenX, screenY, Gdx.graphics.getHeight())) {
+            clearHover();
+            return;
+        }
         if (camera == null) {
             return;
         }
@@ -139,6 +144,20 @@ public final class RoomHighlighter {
         }
     }
 
+    /** Clears pointer feedback without disturbing room, floor or category selection. */
+    public void clearHover() {
+        if (categoryHitboxes == null) {
+            if (hoveredHitbox != null && !Objects.equals(hoveredHitbox, selectedHitbox)) {
+                materials.setHitboxHighlighted(hoveredHitbox, false);
+            }
+            if (lockedFloor == null && hoveredFloor != null) {
+                materials.resetAll();
+            }
+        }
+        hoveredFloor = null;
+        hoveredHitbox = null;
+    }
+
     /**
      * Called on click. A click on a room selects it exactly like a click in the
      * object hierarchy: the handler publishes the application state, which
@@ -147,7 +166,7 @@ public final class RoomHighlighter {
      * space clears the selection.
      */
     public void onClick(int screenX, int screenY) {
-        if (camera == null) {
+        if (camera == null || !workArea.containsScreen(screenX, screenY, Gdx.graphics.getHeight())) {
             return;
         }
         camera.update();

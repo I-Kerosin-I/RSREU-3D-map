@@ -1,5 +1,6 @@
 package org.rsreu.map.input;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Camera;
 import com.badlogic.gdx.math.collision.Ray;
 
@@ -14,8 +15,9 @@ public final class Picking {
     private Picking() {
     }
 
-    /** A ray through the given window coordinates into the 3D work area. */
+    /** A ray through the given window coordinates, or null outside the 3D work area. */
     public static Ray getPickRay(Camera camera, WorkArea workArea, float screenX, float screenY) {
+        if (!workArea.containsScreen(screenX, screenY, Gdx.graphics.getHeight())) return null;
         return camera.getPickRay(screenX, screenY, workArea.x, workArea.y,
             workArea.width, workArea.height);
     }

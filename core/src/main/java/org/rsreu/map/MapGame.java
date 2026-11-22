@@ -10,14 +10,10 @@ import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.BoundingBox;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.BufferUtils;
-import com.badlogic.gdx.utils.JsonValue;
 import net.mgsx.gltf.scene3d.scene.Scene;
-import org.rsreu.map.application.port.CampusRepository;
 import org.rsreu.map.application.usecase.FindRoomsUseCase;
 import org.rsreu.map.controller.MapController;
 import org.rsreu.map.content.InMemoryCampusRepository;
-import org.rsreu.map.content.ManifestLoader;
-import org.rsreu.map.content.ManifestParser;
 import org.rsreu.map.content.ManifestStore;
 import org.rsreu.map.domain.campus.Campus;
 import org.rsreu.map.domain.campus.CategoryTaxonomy;
@@ -194,7 +190,9 @@ public class MapGame extends ApplicationAdapter {
         cameraController.setEditModeSupplier(hud::isEditMode);
         cameraController.setRoomContextMenuHandler((screenX, screenY) ->
             hud.showRoomContextMenu(screenX, screenY));
+        cameraController.setPointerBlockedPredicate(hud::isPointerOverUi);
         Gdx.input.setInputProcessor(new InputMultiplexer(hud.getStage(), cameraController));
+        updateWorkAreaViewport();
 
         Gdx.app.log("MapGame", "Application created successfully");
     }
@@ -252,24 +250,14 @@ private void logFramebuffer() {
         }
     }
 
-    /**
-     * Keeps the camera viewport and the GL viewport inside the 3D work area:
-     * the window minus the top chrome (menu bar, toolbar) and the status bar.
-     * The camera viewport fields are also what screen-space picking uses, so
-     * the rays stay aligned with what is on screen. Re-derived every frame:
-     * the chrome heights come from the laid-out UI actors.
-     */
+    /** Keeps projection, picking and GL rendering inside the laid-out central workspace. */
     private void updateWorkAreaViewport() {
-        int width = Gdx.graphics.getWidth();
-        int height = Gdx.graphics.getHeight();
-        int chromeTop = Math.round(hud.topChromeHeight());
-        int chromeBottom = Math.round(hud.bottomChromeHeight());
-        int viewportHeight = Math.max(1, height - chromeTop - chromeBottom);
-
-        camera.viewportWidth = width;
-        camera.viewportHeight = viewportHeight;
-        workArea.set(0, chromeBottom, width, viewportHeight);
-        Gdx.gl.glViewport(0, chromeBottom, width, viewportHeight);
+        hud.updateWorkArea(workArea);
+        camera.viewportWidth = workArea.width;
+        camera.viewportHeight = workArea.height;
+        camera.update();
+        com.badlogic.gdx.graphics.glutils.HdpiUtils.glViewport(
+            workArea.x, workArea.y, workArea.width, workArea.height);
     }
 
     private void loadScene(String modelPath) {
@@ -317,13 +305,13 @@ private void logFramebuffer() {
 
     @Override
     public void render() {
-        // The classic chrome owns the top and bottom bands of the window; the
-        // 3D camera and the GL viewport must stay inside the work area between
-        // them, otherwise projection, picking and rendering would misalign.
+        // Lay out the docks before deriving projection and input boundaries.
+        hud.act(Gdx.graphics.getDeltaTime());
         updateWorkAreaViewport();
 
         // Update camera based on input
         cameraController.update();
+        cameraController.updatePointerState();
 
         // Advance the floor / room opacity and highlight animation
         if (roomMaterials != null) {
@@ -356,7 +344,7 @@ private void logFramebuffer() {
 
         // UI overlay on top of the 3D scene
         if (hud != null) {
-            hud.actAndDraw(Gdx.graphics.getDeltaTime());
+            hud.draw();
         }
     }
 
@@ -366,6 +354,7 @@ private void logFramebuffer() {
         // band heights on every frame in render(); here only the UI re-layout.
         if (hud != null) {
             hud.resize(width, height);
+            if (camera != null) updateWorkAreaViewport();
         }
     }
 

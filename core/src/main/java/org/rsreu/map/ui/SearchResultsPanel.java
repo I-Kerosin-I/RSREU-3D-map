@@ -61,6 +61,7 @@ public final class SearchResultsPanel {
     private Table resultRow(Space space) {
         Table row = new Table();
         row.setTouchable(Touchable.enabled);
+        row.setBackground(theme.rowIdle());
         row.left();
         row.add(new Label(space.displayName(), theme.skin(), "default")).left();
         row.add(new Label("эт. " + space.floorId().value(), theme.skin(), "hint"))
@@ -79,7 +80,7 @@ public final class SearchResultsPanel {
 
             @Override
             public void exit(InputEvent event, float x, float y, int pointer, Actor toActor) {
-                row.setBackground((com.badlogic.gdx.scenes.scene2d.utils.Drawable) null);
+                row.setBackground(theme.rowIdle());
             }
         });
         return row;

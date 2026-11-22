@@ -12,13 +12,14 @@ import com.badlogic.gdx.graphics.glutils.FrameBuffer;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.ui.TextField;
+import com.badlogic.gdx.scenes.scene2d.ui.Tree;
 import com.badlogic.gdx.scenes.scene2d.ui.Window;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import org.rsreu.map.ui.UiTheme;
 
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Pixel regression checks for the theme's rounded surfaces and hairline borders. */
+/** Pixel regression checks for the theme's rounded surfaces, hairline borders and tree chevrons. */
 public final class UiSurfaceTest {
 
     public static void main(String[] args) {
@@ -55,6 +56,9 @@ public final class UiSurfaceTest {
             checkSurface(button.up, UiTheme.SURFACE, UiTheme.BORDER, UiTheme.RADIUS_M);
             Window.WindowStyle window = theme.skin().get(Window.WindowStyle.class);
             checkSurface(window.background, UiTheme.PANEL_BG, UiTheme.BORDER, UiTheme.RADIUS_L);
+            Tree.TreeStyle tree = theme.skin().get("tree", Tree.TreeStyle.class);
+            checkTreeChevron(tree.minus, true, "expanded tree minus");
+            checkTreeChevron(tree.plus, false, "collapsed tree plus");
 
             TextField.TextFieldStyle field = theme.skin().get(TextField.TextFieldStyle.class);
             require(field.background.getLeftWidth() == UiTheme.SPACE_M + 2, "field left padding applied");
@@ -110,6 +114,54 @@ public final class UiSurfaceTest {
         } finally {
             pixels.dispose();
         }
+    }
+
+    private static void checkTreeChevron(Drawable drawable, boolean expanded, String label) {
+        // Render above the ten-pixel display size so both strokes have measurable coverage.
+        int size = 40;
+        int alphaTolerance = 4;
+        Pixmap pixels = render(drawable, size, size);
+        try {
+            int coveredPixels = 0;
+            double[] coverage = new double[3];
+            double[] position = new double[3];
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    int alpha = topDownAlpha(pixels, x, y);
+                    int reflected = expanded
+                        ? topDownAlpha(pixels, size - 1 - x, y)
+                        : topDownAlpha(pixels, x, size - 1 - y);
+                    require(Math.abs(alpha - reflected) <= alphaTolerance,
+                        label + " has symmetric strokes within raster alpha tolerance");
+                    if (alpha <= alphaTolerance) continue;
+                    coveredPixels++;
+
+                    // Compare the tip's alpha-weighted position with both outer arms.
+                    int across = expanded ? x : y;
+                    if (across < size / 5 || across >= 4 * size / 5) continue;
+                    int band = across < 2 * size / 5 ? 0 : across < 3 * size / 5 ? 1 : 2;
+                    coverage[band] += alpha;
+                    position[band] += alpha * (expanded ? y : x);
+                }
+            }
+            require(coveredPixels >= size, label + " renders a nonempty chevron");
+            for (int band = 0; band < coverage.length; band++) {
+                require(coverage[band] > 0, label + " renders both arms and the central tip");
+                position[band] /= coverage[band];
+            }
+            require(Math.abs(position[0] - position[2]) <= 0.5,
+                label + " arms have matching positions, not a slash");
+            require(position[1] > position[0] + size * 0.05
+                    && position[1] > position[2] + size * 0.05,
+                label + (expanded ? " points down as a V" : " points right as a chevron"));
+        } finally {
+            pixels.dispose();
+        }
+    }
+
+    private static int topDownAlpha(Pixmap pixels, int x, int y) {
+        // Framebuffer readback starts at the bottom; texture artwork uses top-down rows.
+        return pixels.getPixel(x, pixels.getHeight() - 1 - y) & 255;
     }
 
     private static Pixmap render(Drawable drawable, int width, int height) {

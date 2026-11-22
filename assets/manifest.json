@@ -574,14 +574,15 @@
 					},
 					{
 						"id": "main_room_324",
+						"modelNode": "main_room_324_hitbox",
 						"name": "а.324",
 						"type": "ROOM",
-						"modelNode": "main_room_324_hitbox",
 						"description": "Лекционная аудитория-амфитеатр",
 						"category": "amphitheater",
 						"equipment": [
 							"Проектор"
-						]
+						],
+						"edited": true
 					},
 					{
 						"id": "main_room_358",

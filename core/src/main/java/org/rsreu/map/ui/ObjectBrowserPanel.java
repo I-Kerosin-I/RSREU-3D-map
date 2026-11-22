@@ -81,7 +81,7 @@ public final class ObjectBrowserPanel {
 
     /** The browser wrapped in a vertically scrolling pane. */
     public ScrollPane getActor() {
-        ScrollPane pane = new ContentScrollPane(tree, theme.skin());
+        ScrollPane pane = new ContentScrollPane(tree, theme.skin(), false);
         pane.setScrollingDisabled(true, false);
         pane.setFadeScrollBars(false);
         return pane;
@@ -223,6 +223,7 @@ public final class ObjectBrowserPanel {
         // Containers are Touchable.childrenOnly by default, which would make
         // everything but the text itself dead to clicks and hover.
         container.setTouchable(Touchable.enabled);
+        container.setBackground(theme.rowIdle());
         return container;
     }
 
@@ -251,7 +252,7 @@ public final class ObjectBrowserPanel {
     /** Hover + selection background of one row. */
     private void applyRowBackground(BrowserNode node) {
         node.chip.setBackground(node == styledNode ? theme.rowSelected()
-            : node == hoveredNode ? theme.rowHover() : null);
+            : node == hoveredNode ? theme.rowHover() : theme.rowIdle());
     }
 
     /**
@@ -259,9 +260,8 @@ public final class ObjectBrowserPanel {
      * brightens from the secondary color to the full text color.
      */
     private void applyRowStyle(BrowserNode node) {
-        boolean leafSelected = node == styledNode && node.space != null;
-        node.label.setStyle(theme.skin().get(leafSelected ? "tree-sub" : node.style,
-            Label.LabelStyle.class));
+        node.label.setStyle(node == styledNode ? node.selectedStyle
+            : theme.skin().get(node.style, Label.LabelStyle.class));
         applyRowBackground(node);
     }
 
@@ -278,6 +278,7 @@ public final class ObjectBrowserPanel {
         final Container<Label> chip;
         final Label label;
         final String style;
+        final Label.LabelStyle selectedStyle;
         final String categoryId;
         final String subcategoryId;
         final Space space;
@@ -287,6 +288,8 @@ public final class ObjectBrowserPanel {
             this.chip = chip;
             this.label = chip.getActor();
             this.style = style;
+            this.selectedStyle = new Label.LabelStyle(label.getStyle());
+            this.selectedStyle.fontColor = UiTheme.ACCENT;
             this.categoryId = categoryId;
             this.subcategoryId = subcategoryId;
             this.space = space;

@@ -11,6 +11,7 @@ import com.badlogic.gdx.utils.TimeUtils;
 import org.rsreu.map.render.RoomHighlighter;
 
 import java.util.function.BooleanSupplier;
+import java.util.function.BiPredicate;
 
 /**
  * Orbit camera controller.
@@ -96,6 +97,9 @@ public class CameraInputController extends InputAdapter {
 
     /** Reports whether the UI currently claims the keyboard (text field focus). */
     private BooleanSupplier keyboardBlocked = () -> false;
+    private BiPredicate<Integer, Integer> pointerBlocked = (x, y) -> false;
+    private int gesturePointer = -1;
+    private int gestureButton = -1;
 
     /** Reports whether the room editor mode is active (right-click menus). */
     private BooleanSupplier editModeSupplier = () -> false;
@@ -179,6 +183,38 @@ public class CameraInputController extends InputAdapter {
         this.keyboardBlocked = blocked == null ? () -> false : blocked;
     }
 
+    public void setPointerBlockedPredicate(BiPredicate<Integer, Integer> blocked) {
+        pointerBlocked = blocked == null ? (x, y) -> false : blocked;
+    }
+
+    private boolean acceptsPointer(int x, int y) {
+        return workArea.containsScreen(x, y, Gdx.graphics.getHeight()) && !pointerBlocked.test(x, y);
+    }
+
+    private void cancelGesture() {
+        gesturePointer = -1;
+        gestureButton = -1;
+        panning = false;
+        orbiting = false;
+        yawVelocity = 0f;
+        pitchVelocity = 0f;
+        panVelocity.setZero();
+    }
+
+    /** Reconciles hover even when Scene2D consumed movement or layout moved under the pointer. */
+    public void updatePointerState() {
+        int x = Gdx.input.getX();
+        int y = Gdx.input.getY();
+        boolean allowed = acceptsPointer(x, y);
+        if (!allowed) {
+            if (roomHighlighter != null) roomHighlighter.clearHover();
+            if (gesturePointer != -1) cancelGesture();
+        } else if (roomHighlighter != null) {
+            roomHighlighter.onMouseMoved(x, y);
+        }
+        if (gesturePointer == 0 && !Gdx.input.isButtonPressed(gestureButton)) cancelGesture();
+    }
+
     /** Wires the editor mode flag checked before showing room context menus. */
     public void setEditModeSupplier(BooleanSupplier editModeSupplier) {
         this.editModeSupplier = editModeSupplier == null ? () -> false : editModeSupplier;
@@ -225,6 +261,12 @@ public class CameraInputController extends InputAdapter {
 
     @Override
     public boolean touchDown(int screenX, int screenY, int pointer, int button) {
+        if (camera == null || gesturePointer != -1 || !acceptsPointer(screenX, screenY)
+            || (button != Input.Buttons.LEFT && button != Input.Buttons.RIGHT)) {
+            return false;
+        }
+        gesturePointer = pointer;
+        gestureButton = button;
         lastX = screenX;
         lastY = screenY;
         dragMovedSq = 0f;
@@ -260,6 +302,10 @@ public class CameraInputController extends InputAdapter {
 
     @Override
     public boolean touchUp(int screenX, int screenY, int pointer, int button) {
+        if (pointer != gesturePointer || button != gestureButton) return false;
+        gesturePointer = -1;
+        gestureButton = -1;
+        boolean allowed = acceptsPointer(screenX, screenY);
         // A pause before the release means the pointer was already still, so the
         // drag should not glide on.
         float idleSeconds = (TimeUtils.nanoTime() - lastDragNanos) * NANOS_TO_SECONDS;
@@ -270,7 +316,7 @@ public class CameraInputController extends InputAdapter {
             if (idleSeconds > GLIDE_IDLE_MAX) {
                 panVelocity.setZero();
             }
-            if (click && roomHighlighter != null) {
+            if (click && allowed && roomHighlighter != null) {
                 roomHighlighter.onClick(screenX, screenY);
             }
         } else if (button == Input.Buttons.RIGHT) {
@@ -280,13 +326,19 @@ public class CameraInputController extends InputAdapter {
                 pitchVelocity = 0f;
             }
         }
-        return panning || orbiting;
+        if (!allowed) cancelGesture();
+        return true;
     }
 
     @Override
     public boolean touchDragged(int screenX, int screenY, int pointer) {
-        if (camera == null) {
+        if (camera == null || pointer != gesturePointer) {
             return false;
+        }
+        if (!acceptsPointer(screenX, screenY)) {
+            cancelGesture();
+            if (roomHighlighter != null) roomHighlighter.clearHover();
+            return true;
         }
 
         long now = TimeUtils.nanoTime();
@@ -320,7 +372,8 @@ public class CameraInputController extends InputAdapter {
     @Override
     public boolean mouseMoved(int screenX, int screenY) {
         if (roomHighlighter != null) {
-            roomHighlighter.onMouseMoved(screenX, screenY);
+            if (acceptsPointer(screenX, screenY)) roomHighlighter.onMouseMoved(screenX, screenY);
+            else roomHighlighter.clearHover();
         }
         return false;
     }
@@ -331,7 +384,7 @@ public class CameraInputController extends InputAdapter {
      */
     @Override
     public boolean scrolled(float amountX, float amountY) {
-        if (camera == null || amountY == 0f) {
+        if (camera == null || amountY == 0f || !acceptsPointer(Gdx.input.getX(), Gdx.input.getY())) {
             return false;
         }
         zoom(amountY);
