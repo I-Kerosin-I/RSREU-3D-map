@@ -365,10 +365,10 @@ public final class UiTheme implements Disposable {
         Window.WindowStyle window = new Window.WindowStyle();
         window.titleFont = titleFont;
         window.titleFontColor = TEXT;
-        NinePatchDrawable windowBackground = roundedBordered(PANEL_BG, BORDER, RADIUS_L);
+        NinePatch windowPatch = roundedBordered(PANEL_BG, BORDER, RADIUS_L).getPatch();
         // The title sits in the top padding band of the window background.
-        windowBackground.getPatch().setPadding(SPACE_L, SPACE_L, 32, SPACE_L);
-        window.background = windowBackground;
+        windowPatch.setPadding(SPACE_L, SPACE_L, 32, SPACE_L);
+        window.background = new NinePatchDrawable(windowPatch);
         skin.add("default", window);
 
         Tree.TreeStyle tree = new Tree.TreeStyle();
@@ -408,73 +408,91 @@ public final class UiTheme implements Disposable {
     }
 
     /**
-     * Rounded square texture stretched as a nine patch, so the corners keep
-     * their radius at any widget size. Linear filtering keeps the rounded
-     * corners smooth when the patch is stretched or minified. Blending is off
-     * while drawing: the overlapping primitives must write the color and alpha
-     * as given, not blend over each other and accumulate the opacity.
+     * Rounded surfaces share one coverage rasterizer. Each texel averages an
+     * 8×8 sample grid over the exact circular corner, including its alpha;
+     * linear filtering then preserves the smooth edge when the patch is drawn.
+     * The nine patch stretches only the straight middle, never the corners.
      */
     private NinePatchDrawable rounded(Color color, int radius) {
-        int size = radius * 2 + 2;
-        Pixmap pixmap = new Pixmap(size, size, Pixmap.Format.RGBA8888);
-        pixmap.setBlending(Pixmap.Blending.None);
-        pixmap.setColor(color);
-        fillRounded(pixmap, 0, 0, size, size, radius);
-        Texture texture = new Texture(pixmap);
-        pixmap.dispose();
-        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        skin.add("rounded_" + Integer.toHexString(color.toIntBits()) + "_" + radius, texture);
-        return new NinePatchDrawable(new NinePatch(texture, radius, radius, radius, radius));
+        return roundedSurface(color, null, radius);
     }
 
     /** A rounded surface with a 1px outline: fields, popups, the window. */
     private NinePatchDrawable roundedBordered(Color fill, Color border, int radius) {
-        return roundedBordered(fill, border, radius, radius);
+        return roundedSurface(fill, border, radius);
     }
 
-    private NinePatchDrawable roundedBordered(Color fill, Color border, int radius, int borderInset) {
+    private NinePatchDrawable roundedSurface(Color fill, Color border, int radius) {
         int size = radius * 2 + 2;
-        Pixmap pixmap = new Pixmap(size, size, Pixmap.Format.RGBA8888);
-        pixmap.setBlending(Pixmap.Blending.None);
-        pixmap.setColor(border);
-        fillRounded(pixmap, 0, 0, size, size, radius);
-        pixmap.setColor(fill);
-        fillRounded(pixmap, borderInset, borderInset, size - 2 * borderInset, size - 2 * borderInset,
-            Math.max(radius - borderInset, 0));
+        Pixmap pixmap = roundedPixmap(fill, border, size, radius);
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
         texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        skin.add("rounded_bordered_" + Integer.toHexString(fill.toIntBits()) + "_"
-            + Integer.toHexString(border.toIntBits()) + "_" + radius, texture);
+        skin.add("rounded_" + Integer.toHexString(fill.toIntBits()) + "_"
+            + (border == null ? "plain" : Integer.toHexString(border.toIntBits()))
+            + "_" + radius, texture);
         return new NinePatchDrawable(new NinePatch(texture, radius, radius, radius, radius));
     }
 
-    /** Fills an antialias-free rounded rectangle (two rects + four circles). */
-    private static void fillRounded(Pixmap pixmap, int x, int y, int width, int height, int radius) {
-        if (radius <= 0) {
-            pixmap.fillRectangle(x, y, width, height);
-            return;
+    private static Pixmap roundedPixmap(Color fill, Color border, int size, int radius) {
+        return roundedPixmap(fill, border, size, radius, 1f);
+    }
+
+    private static Pixmap roundedPixmap(Color fill, Color border, int size, int radius, float borderWidth) {
+        int samples = 8;
+        Pixmap pixmap = new Pixmap(size, size, Pixmap.Format.RGBA8888);
+        pixmap.setBlending(Pixmap.Blending.None);
+        for (int y = 0; y < size; y++) {
+            for (int x = 0; x < size; x++) {
+                int fillSamples = 0;
+                int borderSamples = 0;
+                for (int sy = 0; sy < samples; sy++) {
+                    for (int sx = 0; sx < samples; sx++) {
+                        float px = x + (sx + 0.5f) / samples;
+                        float py = y + (sy + 0.5f) / samples;
+                        if (roundedEdgeDistance(px, py, size, size, radius) > 0f) {
+                            continue;
+                        }
+                        // The inner curve follows the border inset, including
+                        // the matching smaller radius at each corner.
+                        if (border != null && roundedEdgeDistance(px - borderWidth, py - borderWidth,
+                            size - 2f * borderWidth, size - 2f * borderWidth,
+                            Math.max(radius - borderWidth, 0f)) > 0f) {
+                            borderSamples++;
+                        } else {
+                            fillSamples++;
+                        }
+                    }
+                }
+                float fillAlpha = fillSamples * fill.a;
+                float borderAlpha = border == null ? 0f : borderSamples * border.a;
+                float alpha = fillAlpha + borderAlpha;
+                if (alpha == 0f) {
+                    continue;
+                }
+                // Coverage is averaged in premultiplied space, then stored as
+                // straight alpha for Scene2D's standard blending.
+                float r = fill.r * fillAlpha + (border == null ? 0f : border.r * borderAlpha);
+                float g = fill.g * fillAlpha + (border == null ? 0f : border.g * borderAlpha);
+                float b = fill.b * fillAlpha + (border == null ? 0f : border.b * borderAlpha);
+                pixmap.drawPixel(x, y, Color.rgba8888(r / alpha, g / alpha, b / alpha,
+                    alpha / (samples * samples)));
+            }
         }
-        int r = Math.min(radius, Math.min(width, height) / 2);
-        pixmap.fillRectangle(x + r, y, width - 2 * r, height);
-        pixmap.fillRectangle(x, y + r, width, height - 2 * r);
-        pixmap.fillCircle(x + r, y + r, r);
-        pixmap.fillCircle(x + width - r - 1, y + r, r);
-        pixmap.fillCircle(x + r, y + height - r - 1, r);
-        pixmap.fillCircle(x + width - r - 1, y + height - r - 1, r);
+        return pixmap;
     }
 
     /** A rounded background whose nine patch padding insets the content. */
     private NinePatchDrawable roundedPadded(Color color, int radius, float padX, float padY) {
-        NinePatchDrawable drawable = rounded(color, radius);
-        drawable.getPatch().setPadding(Math.round(padX), Math.round(padX), Math.round(padY), Math.round(padY));
-        return drawable;
+        NinePatch patch = rounded(color, radius).getPatch();
+        patch.setPadding(padX, padX, padY, padY);
+        return new NinePatchDrawable(patch);
     }
 
     private NinePatchDrawable roundedBorderedPadded(Color fill, Color border, int radius, float padX, float padY) {
-        NinePatchDrawable drawable = roundedBordered(fill, border, radius);
-        drawable.getPatch().setPadding(Math.round(padX), Math.round(padX), Math.round(padY), Math.round(padY));
-        return drawable;
+        NinePatch patch = roundedBordered(fill, border, radius).getPatch();
+        patch.setPadding(padX, padX, padY, padY);
+        return new NinePatchDrawable(patch);
     }
 
     /**
@@ -631,12 +649,8 @@ public final class UiTheme implements Disposable {
     private Drawable checkBoxPixmap(boolean checked) {
         int scale = 4;
         int size = 16;
-        Pixmap pixmap = new Pixmap(size * scale, size * scale, Pixmap.Format.RGBA8888);
-        pixmap.setBlending(Pixmap.Blending.None);
-        pixmap.setColor(checked ? ACCENT : SURFACE);
-        fillRounded(pixmap, 0, 0, size * scale, size * scale, 4 * scale);
-        pixmap.setColor(checked ? ACCENT : BORDER);
-        strokeRoundedOutline(pixmap, scale, size, 4);
+        Pixmap pixmap = roundedPixmap(checked ? ACCENT : SURFACE,
+            checked ? null : BORDER, size * scale, RADIUS_S * scale, scale);
         if (checked) {
             pixmap.setColor(TEXT);
             stroke(pixmap, scale, 4, 8.2f, 6.8f, 11f, 0.9f);
@@ -652,30 +666,13 @@ public final class UiTheme implements Disposable {
         return drawable;
     }
 
-    /** 1px rounded outline for the supersampled checkbox: an outer ring of the
-     *  border color with the interior already filled. */
-    private static void strokeRoundedOutline(Pixmap pixmap, int scale, int size, int radius) {
-        int full = size * scale;
-        for (int y = 0; y < full; y++) {
-            for (int x = 0; x < full; x++) {
-                float px = (x + 0.5f) / scale;
-                float py = (y + 0.5f) / scale;
-                float edge = roundedEdgeDistance(px, py, size, size, radius);
-                if (Math.abs(edge) <= 0.75f / scale) {
-                    pixmap.drawPixel(x, y);
-                }
-            }
-        }
-    }
-
-    /**
-     * Signed distance to the boundary of a rounded rectangle: negative inside.
-     * A cheap box-minus-corner approximation is enough for a 1px outline.
-     */
+    /** Signed distance to an exact rounded rectangle: negative inside. */
     private static float roundedEdgeDistance(float px, float py, float width, float height, float radius) {
-        float cx = Math.max(radius, Math.min(width - radius, px));
-        float cy = Math.max(radius, Math.min(height - radius, py));
-        return (float) Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy)) - radius;
+        float qx = Math.abs(px - width / 2f) - (width / 2f - radius);
+        float qy = Math.abs(py - height / 2f) - (height / 2f - radius);
+        float dx = Math.max(qx, 0f);
+        float dy = Math.max(qy, 0f);
+        return (float) Math.sqrt(dx * dx + dy * dy) + Math.min(Math.max(qx, qy), 0f) - radius;
     }
 
     @Override
