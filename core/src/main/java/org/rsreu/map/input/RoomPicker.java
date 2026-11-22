@@ -51,12 +51,30 @@ public final class RoomPicker {
      * @param ray pick ray in world space, may be null
      */
     public String pick(Ray ray) {
+        return pick(ray, null);
+    }
+
+    /**
+     * Returns the name of the hitbox node closest along the ray, considering
+     * only hitboxes of the given floor, or {@code null} when the ray misses
+     * them all. While one floor is locked the others are hidden: their hitboxes
+     * must not intercept the ray, otherwise an invisible room above would steal
+     * the pick from the visible room below.
+     *
+     * @param ray          pick ray in world space, may be null
+     * @param allowedFloor the floor whose hitboxes participate, or {@code null} for all
+     */
+    public String pick(Ray ray, String allowedFloor) {
         if (ray == null) {
             return null;
         }
         String best = null;
         float bestDistance = Float.MAX_VALUE;
         for (Node hitbox : hitboxes) {
+            if (allowedFloor != null
+                && !allowedFloor.equals(parentFloor.get(hitbox.id))) {
+                continue;
+            }
             BoundingBox bounds = worldBounds.get(hitbox.id);
             if (bounds == null) {
                 continue;

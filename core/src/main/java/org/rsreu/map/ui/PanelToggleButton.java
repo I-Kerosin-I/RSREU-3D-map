@@ -12,6 +12,7 @@ public final class PanelToggleButton extends Button {
 
     private final UiTheme theme;
     private final Image arrow;
+    private boolean pointsRight;
 
     public PanelToggleButton(UiTheme theme, boolean pointsRight, Runnable onClick) {
         super(theme.skin(), "panel-toggle");
@@ -31,5 +32,10 @@ public final class PanelToggleButton extends Button {
     public void setPointsRight(boolean pointsRight) {
         arrow.setDrawable(theme.skin().getDrawable(pointsRight
             ? "panel-chevron-right" : "panel-chevron-left"));
+        this.pointsRight = pointsRight;
+    }
+
+    public boolean isPointsRight() {
+        return pointsRight;
     }
 }

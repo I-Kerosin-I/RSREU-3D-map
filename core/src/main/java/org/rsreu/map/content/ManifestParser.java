@@ -155,13 +155,14 @@ public class ManifestParser {
         Integer seats = spaceValue.has("seats") ? spaceValue.getInt("seats") : null;
         List<String> equipment = parseStringList(spaceValue.get("equipment"));
         Map<String, String> attributes = parseAttributes(spaceValue.get("attributes"));
+        boolean edited = spaceValue.getBoolean("edited", false);
 
         if (id == null) return null;
 
         SpaceType type = parseSpaceType(typeStr);
 
         return new Space(new RoomId(id), name, new FloorId(floorId), type, modelNode, description,
-            category, subcategory, seats, equipment, attributes);
+            category, subcategory, seats, equipment, attributes, edited);
     }
 
     private List<String> parseStringList(JsonValue arrayValue) {
@@ -181,8 +182,7 @@ public class ManifestParser {
         if (objectValue == null || !objectValue.isObject()) {
             return Map.of();
         }
-        Map<String, String> attributes = new LinkedHashMap<>();
-        for (JsonValue value = objectValue.child(); value != null; value = value.next()) {
+        Map<String, String> attributes = new LinkedHashMap<>();        for (JsonValue value = objectValue.child(); value != null; value = value.next()) {
             if (value.name != null && !value.name.isBlank()) {
                 attributes.put(value.name, value.asString());
             }
@@ -211,7 +211,8 @@ public class ManifestParser {
             null,
             null,
             List.of(),
-            Map.of()
+            Map.of(),
+            false
         );
 
         Floor stubFloor = new Floor(

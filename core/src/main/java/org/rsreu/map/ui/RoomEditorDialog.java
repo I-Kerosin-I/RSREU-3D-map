@@ -489,11 +489,14 @@ public final class RoomEditorDialog {
         }
 
         String description = descriptionArea.getText().trim();
+        // The edited flag is stamped by the manifest store on every save; the
+        // dialog always builds a pre-save copy of the room.
         return new Space(new RoomId(id), name, new FloorId(floorId), type, modelNode,
             description.isEmpty() ? null : description,
             category, subcategory, seats,
             equipment.isEmpty() ? null : equipment,
-            attributes.isEmpty() ? null : attributes);
+            attributes.isEmpty() ? null : attributes,
+            false);
     }
 
     private String categoryNameOf(String categoryId) {

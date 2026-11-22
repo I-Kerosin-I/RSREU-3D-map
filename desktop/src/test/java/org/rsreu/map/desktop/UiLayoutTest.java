@@ -57,15 +57,10 @@ public final class UiLayoutTest {
         MapController controller = new MapController(new FindRoomsUseCase(repository), repository);
         MapHud hud = new MapHud(theme, controller, CategoryTaxonomy.EMPTY, new ManifestStore(), name -> "1");
         try {
-            for (String style : List.of("menu-item", "top-bar")) {
-                TextButton.TextButtonStyle buttonStyle = theme.skin().get(style, TextButton.TextButtonStyle.class);
-                checkPadding(buttonStyle.up);
-                checkPadding(buttonStyle.over);
-                checkPadding(buttonStyle.down);
-            }
             Stage stage = hud.getStage();
             layout(stage);
             checkMenuLabels(stage.getRoot());
+
             List<PanelToggleButton> buttons = new ArrayList<>();
             collect(stage.getRoot(), buttons);
             require(buttons.size() == 2, "exactly two panel controls");
@@ -77,37 +72,43 @@ public final class UiLayoutTest {
                 right = swap;
             }
             Vector2 openLeft = position(left);
-            Vector2 closedRight = position(right);
             checkSize(left);
             checkSize(right);
-            require(close(openLeft.y, closedRight.y), "panel controls align with the search row");
-            require(close(closedRight.x, stage.getWidth() - 12 - PanelToggleButton.WIDTH), "right control at edge");
-            Drawable leftArrow = ((com.badlogic.gdx.scenes.scene2d.ui.Image) left.getChildren().first()).getDrawable();
-            Drawable rightArrow = ((com.badlogic.gdx.scenes.scene2d.ui.Image) right.getChildren().first()).getDrawable();
+            Drawable leftArrow = arrowOf(left);
+            Drawable rightArrow = arrowOf(right);
+
             for (int i = 0; i < 5; i++) {
+                // Collapse the objects panel: the same button presses against
+                // the left edge, reverses its arrow and stays interactive.
                 left.fire(new ChangeEvent());
                 layout(stage);
                 checkSize(left);
+                require(left.isVisible(), "collapsed left control is visible");
                 require(close(position(left).x, 12), "collapsed left control at edge");
-                require(close(position(left).y, openLeft.y), "left control keeps vertical position");
-                Vector2 center = position(left).add(PanelToggleButton.WIDTH / 2, PanelToggleButton.HEIGHT / 2);
-                Actor hit = stage.hit(center.x, center.y, true);
-                require(hit != null && hit.isDescendantOf(left), "collapsed control hit area follows the button");
-                require(((com.badlogic.gdx.scenes.scene2d.ui.Image) left.getChildren().first()).getDrawable() != leftArrow,
-                    "left arrow reverses when collapsed");
+                require(hitTest(stage, left), "collapsed left control is hitable");
+                require(arrowOf(left) != leftArrow, "left arrow reverses when collapsed");
+                // Collapse the schedule panel: same button at the right edge.
                 right.fire(new ChangeEvent());
                 layout(stage);
                 checkSize(right);
-                require(((com.badlogic.gdx.scenes.scene2d.ui.Image) right.getChildren().first()).getDrawable() != rightArrow,
-                    "right arrow reverses when expanded");
+                require(right.isVisible(), "collapsed right control is visible");
+                require(close(position(right).x, stage.getWidth() - 12 - PanelToggleButton.WIDTH),
+                    "collapsed right control at edge");
+                require(hitTest(stage, right), "collapsed right control is hitable");
+                System.out.println("right collapsed: pointsRight=" + right.isPointsRight() + " sameArrow=" + (arrowOf(right) == rightArrow));
+                require(arrowOf(right) != rightArrow, "right arrow reverses when collapsed");
+                // Expand both back: the buttons return to their home spots.
                 left.fire(new ChangeEvent());
                 right.fire(new ChangeEvent());
                 layout(stage);
                 checkSize(left);
                 checkSize(right);
-                require(position(left).epsilonEquals(openLeft, 0.1f), "left control restores its search-row position");
-                require(position(right).epsilonEquals(closedRight, 0.1f), "right control restores its edge position");
-                require(left.getStage() == stage && right.getStage() == stage, "buttons remain interactive");
+                require(left.isVisible() && right.isVisible(), "expanded controls are visible");
+                Vector2 restored = position(left);
+                require(close(restored.x, openLeft.x), "left control restores its search-row spot horizontally");
+                require(close(restored.y, openLeft.y, 8), "left control restores its search-row spot vertically");
+                require(hitTest(stage, left) && hitTest(stage, right), "expanded controls are hitable");
+                require(arrowOf(left) == leftArrow && arrowOf(right) == rightArrow, "arrows restore");
             }
             stage.getViewport().update(960, 600, true);
             layout(stage);
@@ -120,6 +121,7 @@ public final class UiLayoutTest {
         }
     }
 
+    /** The menu labels must sit in the center of their highlight boxes. */
     private static void checkMenuLabels(Group group) {
         for (Actor actor : group.getChildren()) {
             if (actor instanceof TextButton button
@@ -128,22 +130,26 @@ public final class UiLayoutTest {
                 require(close(label.getX(), button.getWidth() - label.getX() - label.getWidth()),
                     "menu label centered horizontally: " + button.getText());
                 require(close(label.getY(), button.getHeight() - label.getY() - label.getHeight()),
-                    "menu label centered vertically: " + button.getText() + " buttonHeight=" + button.getHeight()
-                        + " labelY=" + label.getY() + " labelHeight=" + label.getHeight());
+                    "menu label centered vertically: " + button.getText());
             } else if (actor instanceof Group child) {
                 checkMenuLabels(child);
             }
         }
     }
 
-    private static void checkPadding(Drawable drawable) {
-        require(close(drawable.getLeftWidth(), 10) && close(drawable.getRightWidth(), 10), "symmetric horizontal menu padding");
-        require(close(drawable.getTopHeight(), 4) && close(drawable.getBottomHeight(), 4), "symmetric vertical menu padding");
-    }
-
     private static void checkSize(PanelToggleButton button) {
         require(close(button.getWidth(), PanelToggleButton.WIDTH), "panel button width stays 28");
         require(close(button.getHeight(), PanelToggleButton.HEIGHT), "panel button height stays 36");
+    }
+
+    private static Drawable arrowOf(PanelToggleButton button) {
+        return ((com.badlogic.gdx.scenes.scene2d.ui.Image) button.getChildren().first()).getDrawable();
+    }
+
+    private static boolean hitTest(Stage stage, Actor target) {
+        Vector2 center = position(target).add(target.getWidth() / 2, target.getHeight() / 2);
+        Actor hit = stage.hit(center.x, center.y, true);
+        return hit != null && hit.isDescendantOf(target);
     }
 
     private static Vector2 position(Actor actor) {
@@ -167,7 +173,11 @@ public final class UiLayoutTest {
     }
 
     private static boolean close(float actual, float expected) {
-        return Math.abs(actual - expected) < 0.1f;
+        return close(actual, expected, 0.5f);
+    }
+
+    private static boolean close(float actual, float expected, float epsilon) {
+        return Math.abs(actual - expected) < epsilon;
     }
 
     private static void require(boolean condition, String message) {

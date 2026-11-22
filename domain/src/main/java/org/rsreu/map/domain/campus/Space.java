@@ -12,6 +12,10 @@ import java.util.Map;
  * Besides the display fields, a space carries optional structured attributes
  * (seat count, equipment) and free-form key/value attributes for the room
  * passport; all of them may be absent and are normalized to empty values.
+ * <p>
+ * The {@code edited} flag marks rooms registered through the room editor: the
+ * object hierarchy lists only those, while bulk-imported rooms stay available
+ * through search and tooltips without cluttering the tree.
  */
 public record Space(
     RoomId id,
@@ -24,7 +28,8 @@ public record Space(
     String subcategory,
     Integer seats,
     List<String> equipment,
-    Map<String, String> attributes
+    Map<String, String> attributes,
+    boolean edited
 ) {
 
     public Space {

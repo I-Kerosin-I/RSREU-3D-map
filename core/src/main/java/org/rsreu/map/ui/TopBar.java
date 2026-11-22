@@ -8,11 +8,10 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import java.util.List;
 
 /**
- * The classic top chrome of the window: a menu bar (Файл / Режим / Вид) and a
- * toolbar row with manifest saving. The editor mode is
- * switched only through the Режим menu. Both rows share one dark strip pinned
- * to the top of the screen; the dropdowns are the shared {@link ContextMenu}
- * popup.
+ * The classic top chrome of the window: a menu bar (Файл / Режим / Вид). The
+ * manifest is saved through Файл → «Сохранить манифест», the editor mode is
+ * switched only through the Режим menu. The dropdowns are the shared
+ * {@link ContextMenu} popup.
  */
 public final class TopBar {
 
@@ -60,7 +59,6 @@ public final class TopBar {
         });
 
         buildMenuRow();
-        buildToolbarRow();
     }
 
     private void buildMenuRow() {
@@ -78,35 +76,8 @@ public final class TopBar {
         table.row();
     }
 
-    private void buildToolbarRow() {
-        TextButton saveButton = toolbarButton("Сохранить", () -> {
-            if (listener != null) {
-                listener.onSaveManifest();
-            }
-        });
-
-        Table toolbar = new Table();
-        toolbar.add(saveButton).left().height(28f);
-        toolbar.left();
-
-        table.add(toolbar).growX().pad(4, 4, 4, 4);
-        table.row();
-    }
-
     private TextButton menuButton(String text, Runnable onClick) {
         TextButton button = new TextButton(text, theme.skin(), "menu-item");
-        button.setRound(false);
-        button.addListener(new ClickListener() {
-            @Override
-            public void clicked(com.badlogic.gdx.scenes.scene2d.InputEvent event, float x, float y) {
-                onClick.run();
-            }
-        });
-        return button;
-    }
-
-    private TextButton toolbarButton(String text, Runnable onClick) {
-        TextButton button = new TextButton(text, theme.skin(), "top-bar");
         button.setRound(false);
         button.addListener(new ClickListener() {
             @Override

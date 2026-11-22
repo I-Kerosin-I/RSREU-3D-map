@@ -149,6 +149,9 @@ public final class ManifestStore {
         setNumber(entry, "seats", space.seats());
         setStringList(entry, "equipment", space.equipment());
         setStringObject(entry, "attributes", space.attributes());
+        // Every editor save marks the room as registered: the object hierarchy
+        // lists only editor-registered rooms.
+        setFlag(entry, "edited");
     }
 
     private void createSpaceEntry(Space space, String floorId) {
@@ -173,6 +176,7 @@ public final class ManifestStore {
         setNumber(entry, "seats", space.seats());
         setStringList(entry, "equipment", space.equipment());
         setStringObject(entry, "attributes", space.attributes());
+        setFlag(entry, "edited");
         spaces.addChild(entry);
     }
 
@@ -201,6 +205,11 @@ public final class ManifestStore {
         if (value != null) {
             entry.addChild(name, new JsonValue(value.longValue()));
         }
+    }
+
+    private static void setFlag(JsonValue entry, String name) {
+        removeField(entry, name);
+        entry.addChild(name, new JsonValue(true));
     }
 
     private static void setStringList(JsonValue entry, String name, List<String> values) {

@@ -12,7 +12,6 @@ import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane;
 import com.badlogic.gdx.scenes.scene2d.ui.Stack;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextField;
-import com.badlogic.gdx.scenes.scene2d.ui.Value;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
@@ -89,6 +88,13 @@ public final class MapHud implements Disposable {
         tooltip = new RoomTooltip(theme, stage);
         contextMenu = new ContextMenu(theme);
         editorDialog = new RoomEditorDialog(theme, taxonomy, this::onRoomSaved);
+        // Right-click on a room row of the hierarchy: the same context menu as
+        // on a 3D room, but only in the editor mode.
+        browserPanel.setRoomContextMenuHandler((space, stageX, stageY) -> {
+            if (isEditMode()) {
+                showRoomContextMenu(space, stageX, stageY);
+            }
+        });
 
         topBar = new TopBar(theme, contextMenu);
         topBar.setListener(new TopBar.Listener() {
@@ -144,7 +150,7 @@ public final class MapHud implements Disposable {
         searchRow = new Table();
         searchRow.add(searchBar.getActor()).growX().height(PanelToggleButton.HEIGHT);
         searchToggleCell = searchRow.add((Actor) objectsToggle)
-            .size(PanelToggleButton.WIDTH, PanelToggleButton.HEIGHT).padLeft(6f);
+            .size(PanelToggleButton.WIDTH, PanelToggleButton.HEIGHT).fill().padLeft(6f);
 
         objectsPanel.add(searchRow).growX().padBottom(10f);
         objectsPanel.row();
@@ -167,7 +173,7 @@ public final class MapHud implements Disposable {
         scheduleDock = new Table();
         scheduleDock.add().growX();
         scheduleToggleCell = scheduleDock.add((Actor) scheduleToggle)
-            .size(PanelToggleButton.WIDTH, PanelToggleButton.HEIGHT);
+            .size(PanelToggleButton.WIDTH, PanelToggleButton.HEIGHT).fill();
         scheduleDock.row();
         scheduleDock.add(schedulePanel.getActor()).colspan(2).grow().padTop(6f);
 
@@ -235,39 +241,37 @@ public final class MapHud implements Disposable {
         return controller.getState().editMode();
     }
 
-    /** Moves the same compact button between the search row and the edge. */
+    /**
+     * Swaps the objects panel with its collapse toggle. The toggle lives in the
+     * search row while the panel is open and presses against the left edge of
+     * the work area (on the spot of the hidden panel) while collapsed.
+     */
     private void setObjectsPanelVisible(boolean visible) {
         if (visible) {
-            objectsCell.clearActor();
+            objectsCell.setActor(objectsPanel).width(PANEL_WIDTH).height(0f);
             searchToggleCell.setActor(objectsToggle);
-            objectsCell.setActor(objectsPanel).width(PANEL_WIDTH)
-                .minHeight(0).prefHeight(Value.prefHeight).maxHeight(0).fill();
         } else {
             searchToggleCell.clearActor();
-            objectsCell.setActor(objectsToggle).width(PanelToggleButton.WIDTH)
-                .height(PanelToggleButton.HEIGHT).fill(0f, 0f);
-            stage.setScrollFocus(null);
-            if (stage.getKeyboardFocus() == searchBar.getActor()) {
-                stage.setKeyboardFocus(null);
-            }
+            objectsCell.setActor(objectsToggle).width(28f).height(36f);
         }
         objectsPanel.setVisible(visible);
+        objectsPanel.setTouchable(visible ? Touchable.enabled : Touchable.disabled);
         objectsToggle.setPointsRight(!visible);
         topBar.setObjectsVisible(visible);
     }
 
-    /** Moves the same compact button between the schedule dock and the edge. */
+    /**
+     * Swaps the schedule panel with its collapse toggle. The toggle lives in
+     * the panel's top-right corner while open and presses against the right
+     * edge of the work area while collapsed.
+     */
     private void setSchedulePanelVisible(boolean visible) {
         if (visible) {
-            scheduleCell.clearActor();
+            scheduleCell.setActor(scheduleDock).width(SCHEDULE_WIDTH).height(0f);
             scheduleToggleCell.setActor(scheduleToggle);
-            scheduleCell.setActor(scheduleDock).width(SCHEDULE_WIDTH)
-                .minHeight(0).prefHeight(Value.prefHeight).maxHeight(0).fill();
         } else {
             scheduleToggleCell.clearActor();
-            scheduleCell.setActor(scheduleToggle).width(PanelToggleButton.WIDTH)
-                .height(PanelToggleButton.HEIGHT).fill(0f, 0f);
-            stage.setScrollFocus(null);
+            scheduleCell.setActor(scheduleToggle).width(28f).height(36f);
         }
         schedulePanel.setVisible(visible);
         scheduleToggle.setPointsRight(visible);
@@ -289,9 +293,7 @@ public final class MapHud implements Disposable {
         Gdx.app.log("CM", "hitbox=" + hitbox + " known=" + (space != null));
         java.util.List<ContextMenu.Item> items = new java.util.ArrayList<>();
         if (space != null) {
-            items.add(new ContextMenu.Item("Редактировать…", () -> showRoomEditor(space, hitbox)));
-            items.add(new ContextMenu.Item("Копировать ID", () ->
-                Gdx.app.getClipboard().setContents(space.id().value())));
+            items.addAll(roomMenuItems(space, hitbox));
         } else {
             items.add(new ContextMenu.Item("Добавить в справочник…",
                 () -> showRoomEditor(null, hitbox)));
@@ -299,6 +301,19 @@ public final class MapHud implements Disposable {
                 Gdx.app.getClipboard().setContents(hitbox)));
         }
         contextMenu.show(stage, screenX, screenY, items);
+    }
+
+    /** Opens the room context menu for a row of the object hierarchy. */
+    private void showRoomContextMenu(Space space, float stageX, float stageY) {
+        contextMenu.show(stage, stageX, stageY, roomMenuItems(space, space.modelNodeName()));
+    }
+
+    /** The menu items of a registered room: open the editor, copy the room id. */
+    private java.util.List<ContextMenu.Item> roomMenuItems(Space space, String hitboxNodeName) {
+        return java.util.List.of(
+            new ContextMenu.Item("Редактировать…", () -> showRoomEditor(space, hitboxNodeName)),
+            new ContextMenu.Item("Копировать ID", () ->
+                Gdx.app.getClipboard().setContents(space.id().value())));
     }
 
     private void showRoomEditor(Space space, String hitboxNodeName) {

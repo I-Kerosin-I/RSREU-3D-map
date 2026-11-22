@@ -175,6 +175,11 @@ public class MapGame extends ApplicationAdapter {
         // A selection cleared in the scene (Escape, click) must drop the UI selection.
         if (roomHighlighter != null) {
             roomHighlighter.setSelectionClearedCallback(() -> mapController.sceneSelectionCleared());
+            // Clicking a room in the scene selects it exactly like a hierarchy
+            // click: the controller publishes the state, which highlights the
+            // room, syncs the object tree and flies the camera.
+            roomHighlighter.setRoomClickedHandler(hitbox ->
+                mapController.findSpaceByHitbox(hitbox).ifPresent(mapController::selectObject));
         }
 
         // UI overlay; the stage consumes input before the camera controller.

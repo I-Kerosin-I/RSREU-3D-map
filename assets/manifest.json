@@ -32,6 +32,10 @@
 			{
 				"id": "ИТГД",
 				"name": "ИТГД"
+			},
+			{
+				"id": "ИНЯЗ",
+				"name": "ИНЯЗ"
 			}
 		]
 	},
@@ -92,12 +96,13 @@
 				"spaces": [
 					{
 						"id": "main_room_210",
+						"modelNode": "main_room_210_hitbox",
 						"name": "а.210",
-						"description": "Лаборатория кафедры ЭВМ",
 						"type": "ROOM",
+						"description": "Лаборатория кафедры ЭВМ",
 						"category": "departments",
 						"subcategory": "evm",
-						"modelNode": "main_room_210_hitbox"
+						"edited": true
 					}
 				]
 			},
@@ -240,10 +245,12 @@
 					},
 					{
 						"id": "main_room_320",
+						"modelNode": "main_room_320_hitbox",
 						"name": "а.320",
 						"type": "ROOM",
-						"modelNode": "main_room_320_hitbox",
-						"category": "departments"
+						"category": "departments",
+						"subcategory": "ИНЯЗ",
+						"edited": true
 					},
 					{
 						"id": "main_room_321",
@@ -390,7 +397,8 @@
 						"type": "ROOM",
 						"description": "Чертёжный зал",
 						"category": "departments",
-						"subcategory": "ИТГД"
+						"subcategory": "ИТГД",
+						"edited": true
 					},
 					{
 						"id": "main_room_345",
@@ -404,7 +412,8 @@
 						"name": "а.346",
 						"type": "ROOM",
 						"description": "Лекционая аудитория",
-						"category": "departments"
+						"category": "departments",
+						"edited": true
 					},
 					{
 						"id": "main_room_347",
@@ -560,7 +569,8 @@
 						"type": "ROOM",
 						"description": "Буфет на третьем этаже",
 						"category": "canteen",
-						"seats": 20
+						"seats": 20,
+						"edited": true
 					},
 					{
 						"id": "main_room_324",
@@ -578,7 +588,8 @@
 						"name": "а.358",
 						"type": "ROOM",
 						"modelNode": "main_room_358_hitbox",
-						"category": "amphitheater"
+						"category": "amphitheater",
+						"edited": true
 					},
 					{
 						"id": "main_room_3WC_M2",
@@ -586,14 +597,16 @@
 						"type": "ROOM",
 						"modelNode": "main_room_3WC_M2_hitbox",
 						"category": "wc",
-						"subcategory": "m"
+						"subcategory": "m",
+						"edited": true
 					},
 					{
 						"id": "main_room_302",
 						"name": "а.302",
 						"type": "ROOM",
 						"modelNode": "main_room_302_hitbox",
-						"category": "amphitheater"
+						"category": "amphitheater",
+						"edited": true
 					},
 					{
 						"id": "main_room_3WC_F4",
@@ -601,7 +614,15 @@
 						"name": "WC (Ж)",
 						"type": "ROOM",
 						"category": "wc",
-						"subcategory": "f"
+						"subcategory": "f",
+						"edited": true
+					},
+					{
+						"id": "main_room_Act",
+						"name": "Актовый зал",
+						"type": "ROOM",
+						"modelNode": "main_room_Act_hitbox",
+						"edited": true
 					}
 				]
 			},
@@ -616,7 +637,8 @@
 						"name": "WC (М)",
 						"type": "ROOM",
 						"category": "wc",
-						"subcategory": "m"
+						"subcategory": "m",
+						"edited": true
 					}
 				]
 			}

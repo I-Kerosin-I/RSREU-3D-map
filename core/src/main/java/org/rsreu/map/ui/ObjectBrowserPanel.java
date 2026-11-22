@@ -1,5 +1,6 @@
 package org.rsreu.map.ui;
 
+import com.badlogic.gdx.Input;
 import com.badlogic.gdx.scenes.scene2d.Actor;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Touchable;
@@ -38,9 +39,16 @@ import java.util.Set;
  */
 public final class ObjectBrowserPanel {
 
+    /** Notified when a room row is right-clicked: (room, stage coordinates). */
+    public interface RoomContextMenuHandler {
+
+        void onRoomContextMenu(Space space, float stageX, float stageY);
+    }
+
     private final UiTheme theme;
     private final MapController controller;
     private final ChipTree tree;
+    private RoomContextMenuHandler roomContextMenuHandler;
 
     /** Leaves by room id, for syncing the visual selection with the app state. */
     private final Map<String, BrowserNode> nodesByRoomId = new HashMap<>();
@@ -56,9 +64,16 @@ public final class ObjectBrowserPanel {
         tree = new ChipTree(theme.skin());
         // Keeps the chips away from the left scrollbar of the pane.
         tree.setPadding(5f, 5f);
-        tree.addListener(new ClickListener() {
+        // -1: the listener accepts every mouse button — the left one selects,
+        // the right one opens the room context menu (the default constructor
+        // silently drops everything but the left click).
+        tree.addListener(new ClickListener(-1) {
             @Override
             public void clicked(InputEvent event, float x, float y) {
+                if (event.getButton() == Input.Buttons.RIGHT) {
+                    notifyRoomContextMenu(event, y);
+                    return;
+                }
                 onNodeClicked(x, y);
             }
         });
@@ -72,7 +87,17 @@ public final class ObjectBrowserPanel {
         return pane;
     }
 
-    /** Rebuilds the tree from the manifest taxonomy and the room data. */
+    /** Wires the receiver of a right-click on a room row of the hierarchy. */
+    public void setRoomContextMenuHandler(RoomContextMenuHandler handler) {
+        roomContextMenuHandler = handler;
+    }
+
+    /**
+     * Rebuilds the tree from the manifest taxonomy and the room data. Only
+     * editor-registered rooms are listed: rooms that sit in the manifest
+     * without ever being saved through the room editor stay out of the tree
+     * (search and tooltips still know them).
+     */
     public void rebuild(CategoryTaxonomy taxonomy) {
         tree.clearChildren();
         nodesByRoomId.clear();
@@ -80,7 +105,9 @@ public final class ObjectBrowserPanel {
         styledNode = null;
 
         for (CategoryDef category : taxonomy.categories()) {
-            List<Space> spaces = controller.findByCategory(category.id(), null);
+            List<Space> spaces = controller.findByCategory(category.id(), null).stream()
+                .filter(Space::edited)
+                .toList();
             if (spaces.isEmpty()) {
                 continue;
             }
@@ -162,6 +189,18 @@ public final class ObjectBrowserPanel {
         } else if (node.categoryId != null) {
             controller.selectCategory(node.categoryId, node.subcategoryId);
         }
+    }
+
+    /** Right-click on a room row: the game layer opens the room context menu. */
+    private void notifyRoomContextMenu(InputEvent event, float y) {
+        if (roomContextMenuHandler == null) {
+            return;
+        }
+        BrowserNode node = tree.getNodeAt(y);
+        if (node == null || node.space == null) {
+            return;
+        }
+        roomContextMenuHandler.onRoomContextMenu(node.space, event.getStageX(), event.getStageY());
     }
 
     private BrowserNode leaf(Space space) {

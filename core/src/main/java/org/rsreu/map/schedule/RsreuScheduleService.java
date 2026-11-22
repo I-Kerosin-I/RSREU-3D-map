@@ -7,7 +7,6 @@ import com.badlogic.gdx.utils.JsonValue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -18,10 +17,12 @@ import java.util.function.Consumer;
  * Fetches classroom schedules from rasp.rsreu.ru.
  * <p>
  * The site renders a week grid server-side for
- * {@code /schedule-frame/classroom?building=X&classroom=<label>}, where the
- * classroom is passed by its display label ("210 C") — the internal option ids
- * do not work as URL parameters. The label is resolved by matching the room
- * number against the classroom list embedded in the building page.
+ * {@code /schedule-frame/classroom?building=X&classroom=<value>}, where the
+ * classroom is identified by the numeric {@code value} of its entry in the
+ * autocomplete list embedded in the building page. The room number is resolved
+ * against the option labels; sending the number itself matches by prefix and
+ * can silently return a different room ("210" also matches "210 L" in the
+ * other campus), so the numeric value is the only unambiguous handle.
  * <p>
  * Fetches run on a daemon thread; results are delivered on the libGDX render
  * thread through {@link Gdx#app postRunnable}.
@@ -34,7 +35,7 @@ public final class RsreuScheduleService {
     public static final String MAIN_BUILDING = "C";
 
     /** One parsed entry of the classroom autocomplete list. */
-    private record ClassroomOption(String label) {
+    private record ClassroomOption(int value, String label) {
     }
 
     /**
@@ -51,7 +52,7 @@ public final class RsreuScheduleService {
             try {
                 result = fetch(building, roomNumber);
             } catch (Exception e) {
-                result = ScheduleResult.fail("Ошибка сети: " + e.getMessage(), browserUrl(building, roomNumber));
+                result = ScheduleResult.fail("Ошибка сети: " + e.getMessage(), browserUrl(building));
             }
             ScheduleResult delivered = result;
             Gdx.app.postRunnable(() -> callback.accept(delivered));
@@ -60,26 +61,26 @@ public final class RsreuScheduleService {
         thread.start();
     }
 
-    /** URL the user can open in a system browser for the same classroom. */
-    public String browserUrl(String building, String roomNumber) {
-        return BASE_URL + "?building=" + building + "&classroom="
-            + urlEncode(roomNumber + " " + building);
+    /** URL the user can open in a system browser to pick the classroom manually. */
+    public String browserUrl(String building) {
+        return BASE_URL + "?building=" + building;
     }
 
     private ScheduleResult fetch(String building, String roomNumber) throws IOException {
         List<ClassroomOption> options = fetchClassroomOptions(building);
-        String label = resolveLabel(options, roomNumber);
-        if (label == null) {
+        ClassroomOption option = resolveOption(options, roomNumber, building);
+        if (option == null) {
             return ScheduleResult.fail("Аудитория «" + roomNumber + "» не найдена на rasp.rsreu.ru",
-                browserUrl(building, roomNumber));
+                browserUrl(building));
         }
 
-        String html = get(BASE_URL + "?building=" + building + "&classroom=" + urlEncode(label));
+        String url = BASE_URL + "?building=" + building + "&classroom=" + option.value();
+        String html = get(url);
         List<ScheduleLesson> lessons = parseWeekTable(html);
         if (lessons.isEmpty()) {
-            return ScheduleResult.fail("Занятия в расписании не найдены", browserUrl(building, roomNumber));
+            return ScheduleResult.fail("Занятия в расписании не найдены", url);
         }
-        return ScheduleResult.ok(lessons, browserUrl(building, roomNumber));
+        return ScheduleResult.ok(lessons, url);
     }
 
     private List<ClassroomOption> fetchClassroomOptions(String building) throws IOException {
@@ -90,7 +91,7 @@ public final class RsreuScheduleService {
         }
         List<ClassroomOption> result = new ArrayList<>();
         for (JsonValue option = options.child(); option != null; option = option.next()) {
-            result.add(new ClassroomOption(option.getString("label")));
+            result.add(new ClassroomOption(option.getInt("value", 0), option.getString("label", "")));
         }
         return result;
     }
@@ -113,24 +114,26 @@ public final class RsreuScheduleService {
     }
 
     /**
-     * Matches the room number against the site labels: both sides are lowered,
-     * stripped of spaces and transliterated from Cyrillic lookalikes.
+     * Matches the room number against the site labels of the given building:
+     * both sides are lowered, stripped of spaces and transliterated from
+     * Cyrillic lookalikes. Labels end with the building letter ("210 C"), which
+     * the match drops together with any surrounding spaces.
      */
-    private String resolveLabel(List<ClassroomOption> options, String roomNumber) {
+    private ClassroomOption resolveOption(List<ClassroomOption> options, String roomNumber,
+                                          String building) {
         String target = normalize(roomNumber);
         if (target.isEmpty()) {
             return null;
         }
+        String buildingSuffix = " " + building;
         for (ClassroomOption option : options) {
             String label = option.label();
-            String stripped = label;
-            // Labels end with the building letter ("210 C").
-            int spaceIndex = stripped.lastIndexOf(' ');
-            if (spaceIndex > 0) {
-                stripped = stripped.substring(0, spaceIndex);
+            if (!label.endsWith(buildingSuffix)) {
+                continue;
             }
-            if (normalize(stripped).equals(target)) {
-                return label;
+            String room = label.substring(0, label.length() - buildingSuffix.length());
+            if (normalize(room).equals(target)) {
+                return option;
             }
         }
         return null;
@@ -315,14 +318,6 @@ public final class RsreuScheduleService {
             .replace("&gt;", ">")
             .replaceAll("\\s+", " ")
             .trim();
-    }
-
-    private static String urlEncode(String value) {
-        try {
-            return URLEncoder.encode(value, StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            return value;
-        }
     }
 
     private static String get(String url) throws IOException {

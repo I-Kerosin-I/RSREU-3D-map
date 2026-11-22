@@ -41,6 +41,10 @@ public final class RoomHighlighter {
     /** Notified when the 3D side discards a UI-made selection (Escape, click). */
     private Runnable selectionClearedCallback;
 
+    /** Notified when a room hitbox is clicked: the game layer publishes the
+     *  same application state a hierarchy click would. */
+    private java.util.function.Consumer<String> roomClickedHandler;
+
     public RoomHighlighter(PerspectiveCamera camera, WorkArea workArea, RoomPicker picker,
                            RoomMaterialManager materials) {
         this.camera = camera;
@@ -55,6 +59,15 @@ public final class RoomHighlighter {
      */
     public void setSelectionClearedCallback(Runnable callback) {
         selectionClearedCallback = callback;
+    }
+
+    /**
+     * Wires the callback fired when a room hitbox is clicked. The game layer
+     * looks the room up in the manifest and publishes the same application
+     * state a hierarchy click would (highlight, camera flight, tree selection).
+     */
+    public void setRoomClickedHandler(java.util.function.Consumer<String> handler) {
+        roomClickedHandler = handler;
     }
 
     /**
@@ -127,10 +140,11 @@ public final class RoomHighlighter {
     }
 
     /**
-     * Called on click. A click on a room locks its floor as the selection; a click
-     * on empty space clears the selection. Any scene click also discards a
-     * selection made through the UI: the scene selects floors, the UI selects
-     * rooms, and they do not mix.
+     * Called on click. A click on a room selects it exactly like a click in the
+     * object hierarchy: the handler publishes the application state, which
+     * highlights the room, locks its floor and flies the camera. Rooms without
+     * manifest metadata still lock their floor, as before. A click on empty
+     * space clears the selection.
      */
     public void onClick(int screenX, int screenY) {
         if (camera == null) {
@@ -140,19 +154,21 @@ public final class RoomHighlighter {
         String hitbox = pickVisibleHitbox(Picking.getPickRay(camera, workArea, screenX, screenY));
 
         if (hitbox != null) {
-            boolean hadUiSelection = selectedHitbox != null || categoryHitboxes != null;
-            selectedHitbox = null;
             categoryHitboxes = null;
-            String floor = picker.floorOf(hitbox);
-            if (floor != null) {
-                materials.resetAll();
-                materials.selectFloor(floor);
-                lockedFloor = floor;
-                hoveredFloor = null;
-                hoveredHitbox = null;
+            if (roomClickedHandler != null) {
+                roomClickedHandler.accept(hitbox);
             }
-            if (hadUiSelection) {
-                notifySelectionCleared();
+            if (lockedFloor == null) {
+                // The handler did not select the room (no manifest metadata, or
+                // no handler wired): the click still locks the room's floor.
+                String floor = picker.floorOf(hitbox);
+                if (floor != null) {
+                    materials.resetAll();
+                    materials.selectFloor(floor);
+                    lockedFloor = floor;
+                    hoveredFloor = null;
+                    hoveredHitbox = null;
+                }
             }
         } else {
             clearSelection();
@@ -209,17 +225,13 @@ public final class RoomHighlighter {
     }
 
     /**
-     * Picks the hitbox under the ray, ignoring rooms of floors the user can not
-     * currently see: while a floor is locked, hitboxes of the hidden floors must
-     * neither highlight nor react to clicks.
+     * Picks the hitbox under the ray, considering only the floors the user can
+     * currently see: while one floor is locked the others are hidden, and an
+     * invisible room's hitbox must not steal the pick from the visible room
+     * behind it.
      */
     private String pickVisibleHitbox(Ray ray) {
-        String hitbox = picker.pick(ray);
-        if (hitbox != null && lockedFloor != null
-            && !Objects.equals(picker.floorOf(hitbox), lockedFloor)) {
-            return null;
-        }
-        return hitbox;
+        return picker.pick(ray, lockedFloor);
     }
 
     /**

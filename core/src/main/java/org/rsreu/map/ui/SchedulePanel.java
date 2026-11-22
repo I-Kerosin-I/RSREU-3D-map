@@ -38,7 +38,6 @@ public final class SchedulePanel {
     /** The room whose schedule was requested; guards stale async results. */
     private Space requestedRoom;
     private String lastUrl;
-    private String lastRoomNumber;
 
     public SchedulePanel(UiTheme theme, RsreuScheduleService service) {
         this.theme = theme;
@@ -65,7 +64,7 @@ public final class SchedulePanel {
         browserButton.addListener(new ClickListener() {
             @Override
             public void clicked(com.badlogic.gdx.scenes.scene2d.InputEvent event, float x, float y) {
-                String url = lastUrl != null ? lastUrl : service.browserUrl(RsreuScheduleService.MAIN_BUILDING, lastRoomNumber);
+                String url = lastUrl != null ? lastUrl : service.browserUrl(RsreuScheduleService.MAIN_BUILDING);
                 Gdx.app.getNet().openURI(url);
             }
         });
@@ -110,16 +109,15 @@ public final class SchedulePanel {
         statusLabel.setColor(UiTheme.TEXT_DIM);
         requestedRoom = space;
         lastUrl = null;
-        lastRoomNumber = "";
 
         if (space == null) {
             statusLabel.setText("Выберите аудиторию, чтобы увидеть расписание");
             return;
         }
-        lastRoomNumber = roomNumberOf(space);
+        String roomNumber = roomNumberOf(space);
         roomLabel.setText("Расписание — " + space.displayName());
         statusLabel.setText("Загрузка…");
-        service.fetchAsync(RsreuScheduleService.MAIN_BUILDING, lastRoomNumber, result -> {
+        service.fetchAsync(RsreuScheduleService.MAIN_BUILDING, roomNumber, result -> {
             // Drop stale results: the user may have selected another room meanwhile.
             if (requestedRoom != space) {
                 return;
