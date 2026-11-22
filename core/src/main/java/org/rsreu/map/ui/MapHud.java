@@ -237,16 +237,17 @@ public final class MapHud implements Disposable {
 
     /**
      * Swaps the objects panel with its collapse toggle. The toggle lives in the
-     * search row while the panel is open and presses against the left edge of
-     * the work area (on the spot of the hidden panel) while collapsed.
+     * search row while the panel is open and takes the hidden panel's spot
+     * while collapsed, inset by the same panel padding: it never presses
+     * against the window edge and keeps its height in both states.
      */
     private void setObjectsPanelVisible(boolean visible) {
         if (visible) {
-            objectsCell.setActor(objectsPanel).width(PANEL_WIDTH).height(0f);
+            objectsCell.setActor(objectsPanel).width(PANEL_WIDTH).height(0f).pad(0f);
             searchToggleCell.setActor(objectsToggle);
         } else {
             searchToggleCell.clearActor();
-            objectsCell.setActor(objectsToggle).width(28f).height(36f);
+            objectsCell.setActor(objectsToggle).width(28f).height(36f).pad(UiTheme.SPACE_M);
         }
         objectsPanel.setVisible(visible);
         objectsPanel.setTouchable(visible ? Touchable.enabled : Touchable.disabled);
@@ -256,15 +257,16 @@ public final class MapHud implements Disposable {
 
     /**
      * Swaps the schedule panel with its collapse toggle. The toggle lives in
-     * the panel's top-right corner while open and presses against the right
-     * edge of the work area while collapsed.
+     * the panel's header while open and takes the hidden panel's spot while
+     * collapsed, inset by the same panel padding: same distance from the
+     * window edge, same height in both states.
      */
     private void setSchedulePanelVisible(boolean visible) {
         if (visible) {
-            scheduleCell.setActor(schedulePanel.getActor()).width(SCHEDULE_WIDTH).height(0f);
+            scheduleCell.setActor(schedulePanel.getActor()).width(SCHEDULE_WIDTH).height(0f).pad(0f);
             schedulePanel.setCollapseButton(scheduleToggle);
         } else {
-            scheduleCell.setActor(scheduleToggle).width(28f).height(36f);
+            scheduleCell.setActor(scheduleToggle).width(28f).height(36f).pad(UiTheme.SPACE_M);
         }
         schedulePanel.setVisible(visible);
         scheduleToggle.setPointsRight(visible);

@@ -72,6 +72,7 @@ public final class UiLayoutTest {
                 right = swap;
             }
             Vector2 openLeft = position(left);
+            Vector2 rightHeader = null;
             checkSize(left);
             checkSize(right);
             Drawable leftArrow = arrowOf(left);
@@ -84,7 +85,8 @@ public final class UiLayoutTest {
                 layout(stage);
                 checkSize(left);
                 require(left.isVisible(), "collapsed left control is visible");
-                require(close(position(left).x, 0), "collapsed left control at edge");
+                require(close(position(left).x, 12), "collapsed left control inset from the window edge");
+                require(close(position(left).y, openLeft.y), "collapsed left control keeps its expanded height");
                 require(hitTest(stage, left), "collapsed left control is hitable");
                 require(arrowOf(left) != leftArrow, "left arrow reverses when collapsed");
                 // Collapse the schedule panel: the button takes its header spot
@@ -95,6 +97,7 @@ public final class UiLayoutTest {
                 require(right.isVisible(), "toggled right control is visible");
                 require(close(position(right).x, stage.getWidth() - 12 - PanelToggleButton.WIDTH),
                     "right control in its header spot");
+                rightHeader = position(right);
                 require(hitTest(stage, right), "toggled right control is hitable");
                 System.out.println("right collapsed: pointsRight=" + right.isPointsRight() + " sameArrow=" + (arrowOf(right) == rightArrow));
                 require(arrowOf(right) != rightArrow, "right arrow reverses when collapsed");
@@ -110,12 +113,15 @@ public final class UiLayoutTest {
                 require(close(restored.y, openLeft.y, 8), "left control restores its search-row spot vertically");
                 require(hitTest(stage, left) && hitTest(stage, right), "expanded controls are hitable");
                 require(arrowOf(left) == leftArrow && arrowOf(right) == rightArrow, "arrows restore");
+                require(close(position(right).y, rightHeader.y),
+                    "collapsed right control keeps its header height");
             }
             stage.getViewport().update(960, 600, true);
             layout(stage);
             checkSize(left);
             checkSize(right);
-            require(close(position(right).x, 960 - PanelToggleButton.WIDTH), "right control follows resize");
+            require(close(position(right).x, 960 - 12 - PanelToggleButton.WIDTH),
+                "right control follows resize");
         } finally {
             hud.dispose();
             theme.dispose();
