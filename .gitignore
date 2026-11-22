@@ -37,3 +37,6 @@ build/
 
 ### Mac OS ###
 .DS_Store
+/assets/3 этаж.png
+/assets/models/Этаж 3.mtl
+/assets/models/Этаж 3.obj

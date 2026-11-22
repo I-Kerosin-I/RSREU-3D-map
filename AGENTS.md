@@ -106,7 +106,7 @@ Units are classified recursively: each `floorN` container node (wherever it sits
 
 Floor and shell colors do not write depth: their nearest surfaces are recorded in separate depth-only passes. Only fully opaque floor fills enter the shared foreground depth baseline; each translucent floor has an independent temporary depth pass. Wireframes depth-test but never write depth. Fully invisible units (hidden floors, non-highlighted hitboxes) are removed from rendering via `NodePart.enabled = false` once their fade-out settles.
 
-The global filled-polygon offset uses `factor = 0`, `units = 2`: the constant unit bias breaks the coplanar fill/line tie without the slope-dependent bias that can push large near-edge-on walls behind interior geometry.
+The global filled-polygon offset uses `factor = 0`, `units = 2`: the constant unit bias breaks the coplanar fill/line tie without the slope-dependent bias that can push large near-edge-on walls behind interior geometry. Polygon offset never applies to lines, so `BuildingShaderProvider` — the color-pass shader provider — extends the PBR vertex shader for line primitives only: clip Z is pulled toward the camera by a bounded fraction of the distance (pixel-derived, at least 0.1%, at most 0.3%), leaving screen position, fills and the `GL_EQUAL` depth/color pairing untouched. Line and fill shaders are cached separately (`canRender` compares primitive classes), and pulled vertices never cross the near plane. This is a rasterization tie-breaker, not an x-ray mode: hidden edges stay hidden unless they sit within the tiny bound of the occluding surface.
 
 ### Transparency and per-floor/shell self-occlusion
 

@@ -31,9 +31,24 @@ public class DesktopLauncher {
      */
     private static final int DEPTH_BITS = 24;
 
+    /**
+     * Window / taskbar icon. The LWJGL3 backend reads these through Pixmap, which
+     * has no .ico support, so the frames of {@code assets/RSREU.ico} are shipped
+     * as pre-rendered PNG sizes and GLFW picks the closest match.
+     */
+    private static final String[] WINDOW_ICONS = {
+        "assets/icons/RSREU_16.png",
+        "assets/icons/RSREU_32.png",
+        "assets/icons/RSREU_48.png",
+        "assets/icons/RSREU_64.png",
+        "assets/icons/RSREU_128.png",
+        "assets/icons/RSREU_256.png",
+    };
+
     public static void main(String[] args) {
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setTitle("RSREU 3D Map");
+        config.setWindowIcon(WINDOW_ICONS);
         config.setWindowedMode(WIDTH, HEIGHT);
         // red, green, blue, alpha, depth, stencil, samples
         config.setBackBufferConfig(8, 8, 8, 8, DEPTH_BITS, 0, SAMPLES);

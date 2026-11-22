@@ -32,9 +32,13 @@ public final class BuildingRenderPassesTest {
     };
 
     public static void main(String[] args) {
+        // Camera updates use JNI matrix math that otherwise only an Application
+        // would load; requires the gdx-platform natives jar on the classpath.
+        com.badlogic.gdx.utils.GdxNativesLoader.load();
         BuildingRenderPassesTest tests = new BuildingRenderPassesTest();
         tests.checkPasses();
         tests.checkFloorTransitions();
+        tests.checkEdgeBias();
         System.out.println("BuildingRenderPassesTest: all checks passed");
     }
 
@@ -211,6 +215,68 @@ public final class BuildingRenderPassesTest {
         require(count(third.depth()) == 1 && count(third.lines()) == 1,
             "hidden floor fades back through independent passes");
         require(count(passes.shellDepth()) == 1, "shell path still returns when selection is cleared");
+    }
+
+    /** Pure-math checks of the bounded line-only depth pull; no GL context needed. */
+    private void checkEdgeBias() {
+        PerspectiveCamera perspective = new PerspectiveCamera(60f, 1280f, 720f);
+        perspective.near = 0.1f;
+        perspective.far = 1000f;
+        perspective.update();
+        Vector2 offset = new Vector2();
+        BuildingShaderProvider.edgeDepthOffset(perspective, 720, offset);
+
+        float b = Math.abs(perspective.projection.val[Matrix4.M23]);
+        float scaleY = Math.abs(perspective.projection.val[Matrix4.M11]);
+        float pixelBias = 2f * BuildingShaderProvider.EDGE_BIAS_PIXELS / (720f * scaleY);
+        float relative = Math.min(BuildingShaderProvider.MAX_RELATIVE_DEPTH_BIAS,
+            Math.max(BuildingShaderProvider.MIN_RELATIVE_DEPTH_BIAS, pixelBias));
+        require(Math.abs(offset.x - b * relative / (1f - relative)) <= Math.abs(offset.x) * 1e-5f,
+            "perspective pull follows the bounded relative distance formula");
+        require(offset.x > 1e-4f && offset.x < 1e-2f && offset.y == 0f,
+            "perspective lines pull toward the camera only in clip depth");
+
+        PerspectiveCamera wide = new PerspectiveCamera(179f, 1280f, 720f);
+        wide.near = 0.1f;
+        wide.far = 1000f;
+        wide.update();
+        BuildingShaderProvider.edgeDepthOffset(wide, 1, offset);
+        float cap = BuildingShaderProvider.MAX_RELATIVE_DEPTH_BIAS;
+        require(Math.abs(offset.x
+                - Math.abs(wide.projection.val[Matrix4.M23]) * cap / (1f - cap)) <= offset.x * 1e-5f,
+            "perspective pull cannot exceed the leak guard");
+
+        OrthographicCamera ortho = new OrthographicCamera(100f, 100f);
+        ortho.near = 0f;
+        ortho.far = 100f;
+        ortho.update();
+        BuildingShaderProvider.edgeDepthOffset(ortho, 100, offset);
+        float range = ortho.far - ortho.near;
+        float pixelWorld = 2f * BuildingShaderProvider.EDGE_BIAS_PIXELS
+            / (100f * Math.abs(ortho.projection.val[Matrix4.M11]));
+        float distance = Math.min(pixelWorld, BuildingShaderProvider.MAX_RELATIVE_DEPTH_BIAS * range);
+        require(Math.abs(offset.y
+                - Math.abs(ortho.projection.val[Matrix4.M22]) * distance) <= Math.abs(offset.y) * 1e-5f,
+            "orthographic pull uses world pixel size within the cap");
+        require(offset.x == 0f && offset.y > 0f, "orthographic pull stays in its clip component");
+
+        require(BuildingShaderProvider.isLine(GL20.GL_LINES)
+            && BuildingShaderProvider.isLine(GL20.GL_LINE_STRIP)
+            && !BuildingShaderProvider.isLine(GL20.GL_TRIANGLES),
+            "only line primitives carry the bias");
+        require(BuildingShaderProvider.samePrimitiveClass(GL20.GL_LINES, GL20.GL_LINE_LOOP)
+            && !BuildingShaderProvider.samePrimitiveClass(GL20.GL_LINES, GL20.GL_TRIANGLES),
+            "shader cache separates line and fill programs");
+
+        String wrapped = BuildingShaderProvider.edgeVertexShader(
+            "void main() { gl_Position = vec4(1.0); }");
+        require(wrapped.contains("#define main buildingPbrMain"),
+            "edge wrapper renames the library entry point");
+        require(wrapped.contains("void main() { gl_Position = vec4(1.0); }"),
+            "fills compile the unmodified vertex source");
+        require(wrapped.contains(BuildingShaderProvider.EDGE_OFFSET_UNIFORM)
+                && wrapped.contains("buildingPbrMain();"),
+            "edge wrapper calls the renamed entry point and declares the offset uniform");
     }
 
     private void checkFloorMaterials(BuildingRenderPasses.FloorPasses floor, NodePart fill) {

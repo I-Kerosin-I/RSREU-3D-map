@@ -10,11 +10,33 @@ import net.mgsx.gltf.scene3d.shaders.PBRShader;
 import net.mgsx.gltf.scene3d.shaders.PBRShaderConfig;
 import net.mgsx.gltf.scene3d.shaders.PBRShaderProvider;
 
-/** Keeps surface lines just ahead of their fills without disabling occlusion. */
+/**
+ * Keeps surface lines just ahead of their fills without disabling occlusion.
+ * <p>
+ * The accent wireframe is exactly coplanar with the building surface, so line
+ * and triangle rasterization produce nearly equal depths and the lines can lose
+ * the depth test at some view angles — a z-fighting-like dropout that the
+ * constant fill polygon offset (see {@code MapGame.POLYGON_OFFSET_UNITS}) cannot
+ * fix, because polygon offset never applies to line primitives. This color-pass
+ * shader provider extends the PBR vertex shader for lines only: clip-space Z is
+ * pulled slightly toward the camera while the screen position stays unchanged.
+ * <p>
+ * The pull is a bounded fraction of the distance. The minimum covers the
+ * sub-pixel sampling difference between a line and its adjacent surface; the
+ * maximum keeps genuinely occluded edges hidden — a rasterization tie-breaker,
+ * never an x-ray mode. Fills compile the unmodified library source, so the
+ * accepted depth/color {@code GL_EQUAL} pairing is untouched.
+ */
 public final class BuildingShaderProvider extends PBRShaderProvider {
 
-    private static final float EDGE_BIAS_PIXELS = 1.5f;
-    private static final float MAX_RELATIVE_DEPTH_BIAS = 0.003f;
+    static final String EDGE_OFFSET_UNIFORM = "u_buildingEdgeDepthOffset";
+
+    /** Lower bound of the pull, as a fraction of the distance. */
+    static final float MIN_RELATIVE_DEPTH_BIAS = 0.001f;
+    /** Upper bound of the pull; larger values would leak hidden edges. */
+    static final float MAX_RELATIVE_DEPTH_BIAS = 0.003f;
+    /** Sub-pixel depth sampling error is estimated over this many pixels. */
+    static final float EDGE_BIAS_PIXELS = 1.5f;
 
     public BuildingShaderProvider(int maxBones) {
         super(createConfig(maxBones));
@@ -76,7 +98,10 @@ public final class BuildingShaderProvider extends PBRShaderProvider {
         if (projection[Matrix4.M32] != 0f) {
             // Perspective: moving a point toward the camera by a relative
             // distance changes only clip Z when its original X/Y/W are retained.
-            float relative = Math.min(pixelSize, MAX_RELATIVE_DEPTH_BIAS);
+            // The pixel estimate alone shrinks with resolution, so the minimum
+            // keeps the sub-pixel tie-break effective on high-DPI screens.
+            float relative = Math.min(MAX_RELATIVE_DEPTH_BIAS,
+                Math.max(MIN_RELATIVE_DEPTH_BIAS, pixelSize));
             out.x = Math.abs(projection[Matrix4.M23]) * relative / (1f - relative);
         } else {
             float distance = Math.min(pixelSize,
@@ -104,7 +129,7 @@ public final class BuildingShaderProvider extends PBRShaderProvider {
             super(renderable, config, prefix);
             primitiveType = renderable.meshPart.primitiveType;
             edgeDepthUniform = isLine(primitiveType)
-                ? register(new Uniform("u_buildingEdgeDepthOffset")) : -1;
+                ? register(new Uniform(EDGE_OFFSET_UNIFORM)) : -1;
         }
 
         @Override

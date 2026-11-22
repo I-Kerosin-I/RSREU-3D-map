@@ -59,6 +59,11 @@ public class MapGame extends ApplicationAdapter {
      * triangle, which for the large, nearly edge-on triangles of a building would
      * push whole walls far too far back and let the wireframe shine through them.
      * A pure unit bias is enough to break an exact tie and is predictable.
+     * <p>
+     * Lines never receive polygon offset, so their remaining sub-pixel depth
+     * mismatch is broken in {@link org.rsreu.map.render.BuildingShaderProvider}: a
+     * bounded clip-Z pull toward the camera in the vertex shader of line
+     * primitives only.
      */
     private static final float POLYGON_OFFSET_FACTOR = 0f;
     private static final float POLYGON_OFFSET_UNITS = 2f;
