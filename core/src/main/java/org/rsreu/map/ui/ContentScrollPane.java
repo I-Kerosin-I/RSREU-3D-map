@@ -9,17 +9,22 @@ import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.utils.Layout;
 
 /**
- * Scroll pane that separates the wheel zone from the click zone:
+ * Scroll pane that keeps the mouse wheel over its rows and separates the wheel
+ * zone from the click zone:
  * <ul>
  * <li>the wheel scrolls the pane while the cursor is anywhere over the visible
  * part of its content — including the gaps between the rows, so a fast scroll
- * never suddenly zooms the camera;</li>
- * <li>clicks and hover reach only the rows themselves ({@link #hit} delegates
- * to the content widget, which in our lists means the chips): the empty part of
- * the pane and the space right of the chips pass clicks through to the 3D
- * scene;</li>
- * <li>the hidden pane never answers hits at all, so the two stacked panes
- * (search results behind the category tree) do not shadow each other.</li>
+ * never suddenly zooms the camera (plain ScrollPanes claim the stage scroll
+ * focus only after a click);</li>
+ * <li>in the click-through mode (the side panels) clicks and hover reach only
+ * the rows themselves ({@link #hit} delegates to the content widget, which in
+ * our lists means the chips): the empty part of the pane and the space right
+ * of the chips pass clicks through to the 3D scene;</li>
+ * <li>in the solid mode (the schedule panel) the whole rectangle is UI and
+ * covers the 3D scene;</li>
+ * <li>the hidden pane never answers hits at all and does not hold the wheel,
+ * so the two stacked panes (search results behind the category tree) do not
+ * shadow each other.</li>
  * </ul>
  * The wheel part works through the stage scroll focus, which is refreshed every
  * frame in {@link #act(float)} from the pointer position.
@@ -27,9 +32,20 @@ import com.badlogic.gdx.scenes.scene2d.utils.Layout;
 public final class ContentScrollPane extends ScrollPane {
 
     private final Vector2 pointerStage = new Vector2();
+    /**
+     * True when clicks outside the rows must reach the 3D scene (the
+     * click-through side panels); false when the pane sits inside an opaque
+     * panel (the schedule) and covers the whole rectangle.
+     */
+    private final boolean hitThrough;
 
     public ContentScrollPane(Actor widget, Skin skin) {
+        this(widget, skin, true);
+    }
+
+    public ContentScrollPane(Actor widget, Skin skin, boolean hitThrough) {
         super(widget, skin);
+        this.hitThrough = hitThrough;
         // The scrollbar sits to the left of the content. The field has no
         // public setter in libGDX 1.12.1, hence the reflection.
         try {
@@ -52,6 +68,14 @@ public final class ContentScrollPane extends ScrollPane {
         super.act(delta);
         Stage stage = getStage();
         if (stage == null) {
+            return;
+        }
+        if (!isVisible()) {
+            // A hidden pane (the search results behind the tree) must neither
+            // claim nor keep the wheel.
+            if (stage.getScrollFocus() == this) {
+                stage.setScrollFocus(null);
+            }
             return;
         }
         if (isPointerOverVisibleContent()) {
@@ -101,6 +125,10 @@ public final class ContentScrollPane extends ScrollPane {
         }
         if (x < 0 || x >= getWidth() || y < 0 || y >= getHeight()) {
             return null;
+        }
+        if (!hitThrough) {
+            // Inside an opaque panel: the whole rectangle is solid UI.
+            return super.hit(x, y, touchable);
         }
         Actor widget = getWidget();
         if (widget == null) {

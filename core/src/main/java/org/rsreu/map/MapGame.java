@@ -330,8 +330,9 @@ private void logFramebuffer() {
             roomMaterials.update(Gdx.graphics.getDeltaTime());
         }
 
-        // Clear screen (the chrome bands are covered by opaque UI afterwards)
-        Gdx.gl.glClearColor(0.25f, 0.25f, 0.35f, 1f);
+        // Clear screen (the chrome bands are covered by opaque UI afterwards).
+        // Matches the UI palette backdrop (UiTheme.APP_BG).
+        Gdx.gl.glClearColor(0x17 / 255f, 0x1B / 255f, 0x24 / 255f, 1f);
         Gdx.gl.glColorMask(true, true, true, true);
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);

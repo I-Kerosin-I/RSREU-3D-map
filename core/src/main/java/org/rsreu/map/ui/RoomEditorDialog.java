@@ -142,9 +142,7 @@ public final class RoomEditorDialog {
         addRow(fields, "Число мест", seatsField);
 
         Table equipment = new Table();
-        Label equipmentTitle = new Label("Оборудование", theme.skin(), "hint");
-        equipment.add(equipmentTitle).left().colspan(2);
-        equipment.row();
+        equipment.padLeft(UiTheme.SPACE_S);
         for (String preset : UiTheme.EQUIPMENT_PRESETS) {
             CheckBox check = new CheckBox(preset, theme.skin());
             equipmentChecks.put(preset, check);
@@ -162,7 +160,7 @@ public final class RoomEditorDialog {
 
         attributeRows = new Table();
         Label attributesTitle = sectionTitle("Произвольные атрибуты");
-        TextButton addAttribute = new TextButton("+ атрибут", theme.skin());
+        TextButton addAttribute = new TextButton("+ атрибут", theme.skin(), "compact");
         addAttribute.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
@@ -177,7 +175,7 @@ public final class RoomEditorDialog {
         fields.row();
 
         Table buttons = new Table();
-        TextButton save = new TextButton("Сохранить", theme.skin());
+        TextButton save = new TextButton("Сохранить", theme.skin(), "primary");
         save.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
@@ -194,17 +192,19 @@ public final class RoomEditorDialog {
         buttons.add(save).padRight(8f);
         buttons.add(cancel);
 
-        window.add(fields).growX().pad(8, 8, 8, 8);
+        window.add(fields).growX().pad(UiTheme.SPACE_L);
         window.row();
-        window.add(errorLabel).left().pad(0, 8, 4, 8).growX();
+        window.add(errorLabel).left().pad(0, UiTheme.SPACE_L, UiTheme.SPACE_XS, UiTheme.SPACE_L).growX();
         window.row();
-        window.add(buttons).right().pad(4, 8, 8, 8);
+        window.add(buttons).right().pad(UiTheme.SPACE_XS, UiTheme.SPACE_L, UiTheme.SPACE_L, UiTheme.SPACE_L);
         window.row();
         window.setVisible(false);
     }
 
     private Label sectionTitle(String text) {
-        return new Label(text, theme.skin(), "accent");
+        // Section captions stay quiet: small, secondary — the accent is
+        // reserved for interactive and selected states.
+        return new Label(text, theme.skin(), "caption");
     }
 
     private void addRow(Table fields, String caption, Actor field) {
@@ -347,7 +347,7 @@ public final class RoomEditorDialog {
         keyField.setMessageText("ключ");
         TextField valueField = new TextField(value, theme.skin());
         valueField.setMessageText("значение");
-        TextButton remove = new TextButton("×", theme.skin());
+        TextButton remove = new TextButton("×", theme.skin(), "compact");
         remove.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
@@ -375,7 +375,7 @@ public final class RoomEditorDialog {
             keyField.setMessageText("ключ");
             TextField valueField = new TextField(row[1], theme.skin());
             valueField.setMessageText("значение");
-            TextButton remove = new TextButton("×", theme.skin());
+            TextButton remove = new TextButton("×", theme.skin(), "compact");
             remove.addListener(new ClickListener() {
                 @Override
                 public void clicked(InputEvent event, float x, float y) {

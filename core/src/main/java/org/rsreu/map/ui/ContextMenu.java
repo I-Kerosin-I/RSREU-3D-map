@@ -27,7 +27,8 @@ public final class ContextMenu {
     public ContextMenu(UiTheme theme) {
         this.theme = theme;
         table = new Table();
-        table.setBackground(theme.tooltipBackground());
+        table.setBackground(theme.popupBackground());
+        table.pad(UiTheme.SPACE_XS);
         table.setVisible(false);
     }
 

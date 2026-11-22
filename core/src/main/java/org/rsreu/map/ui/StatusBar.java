@@ -26,7 +26,7 @@ public final class StatusBar {
 
     public StatusBar(UiTheme theme) {
         table = new Table();
-        table.setBackground(theme.panelBackground());
+        table.setBackground(theme.statusBarBackground());
         table.setTouchable(Touchable.enabled);
         table.addListener(new com.badlogic.gdx.scenes.scene2d.utils.ClickListener() {
             @Override
@@ -41,10 +41,10 @@ public final class StatusBar {
         rightLabel = new Label("", theme.skin(), "hint");
         rightLabel.setEllipsis(true);
 
-        table.add(leftLabel).left().pad(4, 8, 4, 8);
+        table.add(leftLabel).left().pad(5, UiTheme.SPACE_L, 5, UiTheme.SPACE_L);
         Table spacer = new Table();
         table.add(spacer).growX();
-        table.add(rightLabel).right().pad(4, 8, 4, 8).maxWidth(600);
+        table.add(rightLabel).right().pad(5, UiTheme.SPACE_L, 5, UiTheme.SPACE_L).maxWidth(600);
     }
 
     public Actor getActor() {

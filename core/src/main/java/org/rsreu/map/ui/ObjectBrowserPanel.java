@@ -24,18 +24,16 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The category tree of the side panel: category → subcategory → objects. The
- * tree is built from the manifest taxonomy, so new categories appear without a
- * code change.
- * <p>
- * Every row carries its own small floating chip instead of the tree sitting on
- * one opaque panel (Fusion 360 browser style); the selected row's chip lights
- * up with the accent color. Clicking an object selects it on the map (every
- * click re-runs the camera flight, even for the already selected room).
- * Clicking a category or a subcategory highlights all its rooms over the
- * dimmed building, across floors. The visual selection follows the application
- * state, so a selection cleared in the 3D scene (Escape, click on empty space)
- * clears the chip highlight too.
+ * The category tree of the navigation panel: category → subcategory → objects,
+ * built from the manifest taxonomy, so new categories appear without a code
+ * change. Rows are quiet text lines: categories in bold, rooms in the
+ * secondary color; a hovered row lightens, the selected row carries the muted
+ * selection wash. Clicking an object selects it on the map (every click
+ * re-runs the camera flight, even for the already selected room). Clicking a
+ * category or a subcategory highlights all its rooms over the dimmed
+ * building, across floors. The visual selection follows the application
+ * state, so a selection cleared in the 3D scene (Escape, click on empty
+ * space) clears the row highlight too.
  */
 public final class ObjectBrowserPanel {
 
@@ -54,15 +52,17 @@ public final class ObjectBrowserPanel {
     private final Map<String, BrowserNode> nodesByRoomId = new HashMap<>();
     /** Category / subcategory nodes by {@code category[/subcategory]} key. */
     private final Map<String, BrowserNode> nodesByCategoryKey = new HashMap<>();
-    /** The node whose chip is currently lit with the selection color. */
+    /** The node whose row is lit with the selection color. */
     private BrowserNode styledNode;
+    /** The node whose row carries the hover highlight. */
+    private BrowserNode hoveredNode;
 
     public ObjectBrowserPanel(UiTheme theme, MapController controller) {
         this.theme = theme;
         this.controller = controller;
 
         tree = new ChipTree(theme.skin());
-        // Keeps the chips away from the left scrollbar of the pane.
+        // Keeps the rows away from the left scrollbar of the pane.
         tree.setPadding(5f, 5f);
         // -1: the listener accepts every mouse button — the left one selects,
         // the right one opens the room context menu (the default constructor
@@ -103,6 +103,7 @@ public final class ObjectBrowserPanel {
         nodesByRoomId.clear();
         nodesByCategoryKey.clear();
         styledNode = null;
+        hoveredNode = null;
 
         for (CategoryDef category : taxonomy.categories()) {
             List<Space> spaces = controller.findByCategory(category.id(), null).stream()
@@ -112,9 +113,10 @@ public final class ObjectBrowserPanel {
                 continue;
             }
 
-            BrowserNode categoryNode = new BrowserNode(chip(category.name(), true),
-                category.id(), null, null);
+            BrowserNode categoryNode = new BrowserNode(rowLabel(category.name(), "heading"),
+                "heading", category.id(), null, null);
             nodesByCategoryKey.put(category.id(), categoryNode);
+            trackHover(categoryNode);
             Set<String> placed = new HashSet<>();
 
             for (SubcategoryDef subcategory : category.subcategories()) {
@@ -124,9 +126,10 @@ public final class ObjectBrowserPanel {
                 if (subSpaces.isEmpty()) {
                     continue;
                 }
-                BrowserNode subNode = new BrowserNode(chip(subcategory.name(), false),
-                    category.id(), subcategory.id(), null);
+                BrowserNode subNode = new BrowserNode(rowLabel(subcategory.name(), "tree-sub"),
+                    "tree-sub", category.id(), subcategory.id(), null);
                 nodesByCategoryKey.put(categoryKey(category.id(), subcategory.id()), subNode);
+                trackHover(subNode);
                 for (Space space : subSpaces) {
                     subNode.add(leaf(space));
                     placed.add(space.id().value());
@@ -148,7 +151,8 @@ public final class ObjectBrowserPanel {
 
     /**
      * Aligns the visual selection with the application state: the selected room,
-     * the selected category, or nothing. The selected row's chip lights up.
+     * the selected category, or nothing. The selected row carries the selection
+     * wash and a brighter text.
      */
     public void syncSelection(String selectedRoomId, String selectedCategoryId,
                               String selectedSubcategoryId) {
@@ -159,13 +163,14 @@ public final class ObjectBrowserPanel {
             node = nodesByCategoryKey.get(categoryKey(selectedCategoryId, selectedSubcategoryId));
         }
         if (node != styledNode) {
-            if (styledNode != null) {
-                applyChipStyle(styledNode, false);
+            BrowserNode previous = styledNode;
+            styledNode = node;
+            if (previous != null) {
+                applyRowStyle(previous);
             }
             if (node != null) {
-                applyChipStyle(node, true);
+                applyRowStyle(node);
             }
-            styledNode = node;
         }
         if (node != null) {
             tree.getSelection().set(node);
@@ -204,30 +209,60 @@ public final class ObjectBrowserPanel {
     }
 
     private BrowserNode leaf(Space space) {
-        BrowserNode node = new BrowserNode(chip(space.displayName(), false), null, null, space);
+        BrowserNode node = new BrowserNode(rowLabel(space.displayName(), "secondary"),
+            "secondary", null, null, space);
+        trackHover(node);
         nodesByRoomId.put(space.id().value(), node);
         return node;
     }
 
-    /** A text label on its own floating rounded chip. */
-    private Container<Label> chip(String text, boolean category) {
-        Label label = new Label(text, theme.skin(), category ? "accent" : "default");
+    /** A text label on its own row container: the hover / selection carrier. */
+    private Container<Label> rowLabel(String text, String style) {
+        Label label = new Label(text, theme.skin(), style);
         Container<Label> container = new Container<>(label);
         // Containers are Touchable.childrenOnly by default, which would make
         // everything but the text itself dead to clicks and hover.
         container.setTouchable(Touchable.enabled);
-        container.setBackground(theme.chipBackground());
         return container;
     }
 
     /**
-     * Lights the row's chip up or down. The accent-colored category text turns
-     * white while its chip carries the accent background, so it stays readable.
+     * Adds the hover highlight of a row: lightens the row under the cursor,
+     * leaving the selected row to the selection wash.
      */
-    private void applyChipStyle(BrowserNode node, boolean selected) {
-        node.chip.setBackground(selected ? theme.chipSelected() : theme.chipBackground());
-        boolean accentText = node.categoryId != null && !selected;
-        node.label.setStyle(theme.skin().get(accentText ? "accent" : "default", Label.LabelStyle.class));
+    private void trackHover(BrowserNode node) {
+        node.chip.addListener(new com.badlogic.gdx.scenes.scene2d.InputListener() {
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, Actor fromActor) {
+                hoveredNode = node;
+                applyRowBackground(node);
+            }
+
+            @Override
+            public void exit(InputEvent event, float x, float y, int pointer, Actor toActor) {
+                if (hoveredNode == node) {
+                    hoveredNode = null;
+                }
+                applyRowBackground(node);
+            }
+        });
+    }
+
+    /** Hover + selection background of one row. */
+    private void applyRowBackground(BrowserNode node) {
+        node.chip.setBackground(node == styledNode ? theme.rowSelected()
+            : node == hoveredNode ? theme.rowHover() : null);
+    }
+
+    /**
+     * Restyles one row for its current selection state: the selected room
+     * brightens from the secondary color to the full text color.
+     */
+    private void applyRowStyle(BrowserNode node) {
+        boolean leafSelected = node == styledNode && node.space != null;
+        node.label.setStyle(theme.skin().get(leafSelected ? "tree-sub" : node.style,
+            Label.LabelStyle.class));
+        applyRowBackground(node);
     }
 
     private static String categoryKey(String categoryId, String subcategoryId) {
@@ -242,14 +277,16 @@ public final class ObjectBrowserPanel {
 
         final Container<Label> chip;
         final Label label;
+        final String style;
         final String categoryId;
         final String subcategoryId;
         final Space space;
 
-        BrowserNode(Container<Label> chip, String categoryId, String subcategoryId, Space space) {
+        BrowserNode(Container<Label> chip, String style, String categoryId, String subcategoryId, Space space) {
             super(chip);
             this.chip = chip;
             this.label = chip.getActor();
+            this.style = style;
             this.categoryId = categoryId;
             this.subcategoryId = subcategoryId;
             this.space = space;
@@ -257,10 +294,10 @@ public final class ObjectBrowserPanel {
     }
 
     /**
-     * Tree whose rows are hittable only where they are drawn: the chips and the
-     * expansion-arrow strips. The plain Tree claims its whole bounds, so clicks
-     * and the wheel in the empty space right of the chips would never reach the
-     * 3D scene.
+     * Tree whose rows are hittable only where they are drawn: the row labels
+     * and the expansion-arrow strips. The plain Tree claims its whole bounds,
+     * so clicks and the wheel in the empty space right of the rows would never
+     * reach the 3D scene.
      */
     private static final class ChipTree extends Tree<BrowserNode, String> {
 
@@ -272,7 +309,7 @@ public final class ObjectBrowserPanel {
         public Actor hit(float x, float y, boolean touchable) {
             Actor hit = super.hit(x, y, touchable);
             if (hit != this) {
-                return hit; // a chip (or its label) was hit
+                return hit; // a row label (or its container) was hit
             }
             // The tree itself was hit: only the expansion-arrow strip of a node
             // with children counts, the rest of the row passes through.

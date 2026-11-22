@@ -26,22 +26,22 @@ import java.util.function.Function;
 
 /**
  * The root UI container: owns the Scene2D {@link Stage}, composes the classic
- * chrome (top bar with menus and the toolbar, bottom status bar), the floating
- * side panels (search + category tree on the left, schedule on the right), the
- * hover tooltip and the room editor mode pieces, and forwards application state
- * to the components. Widgets communicate only with the {@link MapController},
- * never with the 3D scene.
+ * chrome (top menu bar, bottom status bar) and the docked side panels (search
+ * + category tree on the left, the room inspector with the schedule on the
+ * right), the hover tooltip and the room editor mode pieces, and forwards
+ * application state to the components. Widgets communicate only with the
+ * {@link MapController}, never with the 3D scene.
  * <p>
  * The chrome occupies dedicated top and bottom bands outside the 3D work area:
  * the game's render loop reads {@link #topChromeHeight()} and
  * {@link #bottomChromeHeight()} to keep the GL viewport and the camera inside
- * the rectangle between the bands.
+ * the rectangle between the bands. The side panels dock against the edges of
+ * that work area and are separated from the 3D scene by a hairline border.
  */
 public final class MapHud implements Disposable {
 
-    private static final float PANEL_WIDTH = 310f;
-    private static final float PANEL_MARGIN = 12f;
-    private static final float SCHEDULE_WIDTH = 360f;
+    private static final float PANEL_WIDTH = 304f;
+    private static final float SCHEDULE_WIDTH = 356f;
 
     private final Stage stage;
     private final MapController controller;
@@ -60,13 +60,11 @@ public final class MapHud implements Disposable {
 
     private final Table objectsPanel;
     private final Table searchRow;
-    private final Table scheduleDock;
     private final PanelToggleButton objectsToggle;
     private final PanelToggleButton scheduleToggle;
     private final Cell<Actor> objectsCell;
     private final Cell<Actor> scheduleCell;
     private final Cell<Actor> searchToggleCell;
-    private final Cell<Actor> scheduleToggleCell;
     private final ScrollPane resultsScroll;
     private final ScrollPane browserScroll;
 
@@ -142,17 +140,22 @@ public final class MapHud implements Disposable {
         contentRegion.setTouchable(Touchable.childrenOnly);
 
         objectsPanel = new Table();
+        objectsPanel.setBackground(theme.leftPanelBackground());
+        objectsPanel.pad(UiTheme.SPACE_M);
         objectsToggle = new PanelToggleButton(theme, false,
             () -> setObjectsPanelVisible(!objectsPanel.isVisible()));
         scheduleToggle = new PanelToggleButton(theme, false,
             () -> setSchedulePanelVisible(!schedulePanel.isVisible()));
+        // The collapse toggle lives inside the inspector header, next to the
+        // refresh action; collapsing swaps the whole panel for the bare button.
+        schedulePanel.setCollapseButton(scheduleToggle);
 
         searchRow = new Table();
         searchRow.add(searchBar.getActor()).growX().height(PanelToggleButton.HEIGHT);
         searchToggleCell = searchRow.add((Actor) objectsToggle)
-            .size(PanelToggleButton.WIDTH, PanelToggleButton.HEIGHT).fill().padLeft(6f);
+            .size(PanelToggleButton.WIDTH, PanelToggleButton.HEIGHT).fill().padLeft(UiTheme.SPACE_S);
 
-        objectsPanel.add(searchRow).growX().padBottom(10f);
+        objectsPanel.add(searchRow).growX().padBottom(UiTheme.SPACE_S);
         objectsPanel.row();
 
         // While a query is typed the results replace the category tree; the
@@ -168,20 +171,11 @@ public final class MapHud implements Disposable {
         resultsScroll.setVisible(false);
         objectsPanel.add(stack).grow();
 
-        // Keep the schedule control outside the panel body, aligned with the
-        // search row. Collapsing moves the same button into the edge cell.
-        scheduleDock = new Table();
-        scheduleDock.add().growX();
-        scheduleToggleCell = scheduleDock.add((Actor) scheduleToggle)
-            .size(PanelToggleButton.WIDTH, PanelToggleButton.HEIGHT).fill();
-        scheduleDock.row();
-        scheduleDock.add(schedulePanel.getActor()).colspan(2).grow().padTop(6f);
-
         objectsCell = contentRegion.add((Actor) objectsPanel).width(PANEL_WIDTH).growY()
-            .pad(PANEL_MARGIN).align(Align.topLeft);
+            .align(Align.topLeft);
         contentRegion.add().expandX();
-        scheduleCell = contentRegion.add((Actor) scheduleDock).width(SCHEDULE_WIDTH).growY()
-            .pad(PANEL_MARGIN).align(Align.topRight);
+        scheduleCell = contentRegion.add((Actor) schedulePanel.getActor()).width(SCHEDULE_WIDTH)
+            .growY().align(Align.topRight);
         setSchedulePanelVisible(false);
 
         root.add(topBar.getActor()).growX();
@@ -267,10 +261,9 @@ public final class MapHud implements Disposable {
      */
     private void setSchedulePanelVisible(boolean visible) {
         if (visible) {
-            scheduleCell.setActor(scheduleDock).width(SCHEDULE_WIDTH).height(0f);
-            scheduleToggleCell.setActor(scheduleToggle);
+            scheduleCell.setActor(schedulePanel.getActor()).width(SCHEDULE_WIDTH).height(0f);
+            schedulePanel.setCollapseButton(scheduleToggle);
         } else {
-            scheduleToggleCell.clearActor();
             scheduleCell.setActor(scheduleToggle).width(28f).height(36f);
         }
         schedulePanel.setVisible(visible);

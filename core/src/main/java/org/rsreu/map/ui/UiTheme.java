@@ -25,35 +25,58 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Disposable;
 
 /**
- * Centralized UI theme: Cyrillic-capable fonts generated at startup from the
- * bundled PT Sans files, the color palette, flat / rounded drawables and the
- * widget styles. All widgets take their styles from here, so the visual design
- * can change without touching UI logic.
+ * Centralized UI design system: the palette, the typography scale, the spacing
+ * and radius tokens, the generated Cyrillic-capable fonts (bundled PT Sans),
+ * the shared drawables and the widget styles. Every widget takes its look from
+ * here, so the visual design can change without touching UI logic.
  * <p>
- * The controls float over the 3D scene in the manner of the Fusion 360 browser:
- * there is no opaque panel behind them, every text row carries its own small
- * semi-transparent rounded "chip" instead.
+ * The look follows a "technical minimalism" direction: a calm dark neutral
+ * base, one cold blue accent reserved for interactive and selected states,
+ * flat surfaces separated by hairline borders instead of shadows.
  */
 public final class UiTheme implements Disposable {
 
-    // Centralized palette; the accent matches the edge wireframe color.
-    public static final Color TEXT = new Color(0xE6EBF4FF);
-    public static final Color TEXT_DIM = new Color(0x94A0B8FF);
-    public static final Color ACCENT = new Color(0x2F6DB2FF);
-    /** Floating chip under a single text row. */
-    public static final Color CHIP_BG = new Color(0x10151F82);
-    public static final Color CHIP_HOVER = new Color(0x2F6DB280);
-    public static final Color CHIP_SELECTED = new Color(0x2F6DB2B4);
-    public static final Color TOOLTIP_BG = new Color(0x0C111AE6);
-    /** Opaque chrome of the classic layout: menu bar, toolbar, status bar,
-     *  side panels, popups. They are separate window areas, not overlays. */
-    public static final Color PANEL_BG = new Color(0x10151FFF);
-    public static final Color FIELD_BG = new Color(0x1A223099);
-    public static final Color FIELD_BG_FOCUSED = new Color(0x212B3DB4);
-    public static final Color SCROLL_TRACK = new Color(0xFFFFFF28);
-    public static final Color SCROLL_KNOB = new Color(0xFFFFFF66);
-    public static final Color TREE_SELECTION = new Color(0x2F6DB260);
-    public static final Color ROW_HOVER = new Color(0x2F6DB250);
+    // === Palette. ===
+    /** The 3D viewport backdrop; also the base of tooltips. */
+    public static final Color APP_BG = new Color(0x171B24FF);
+    /** Chrome strips, docked panels and popups. */
+    public static final Color PANEL_BG = new Color(0x202633FF);
+    /** Nested surfaces: fields, buttons, cards. */
+    public static final Color SURFACE = new Color(0x282F3DFF);
+    /** Hover highlight of interactive elements. */
+    public static final Color SURFACE_HOVER = new Color(0x303949FF);
+    /** Hairline borders and separators. */
+    public static final Color BORDER = new Color(0x343D4DFF);
+    public static final Color TEXT = new Color(0xE2E8F0FF);
+    public static final Color TEXT_SECONDARY = new Color(0x929DB0FF);
+    public static final Color TEXT_DISABLED = new Color(0x667286FF);
+    /** The single accent: interactivity, selection, focus. Not decoration. */
+    public static final Color ACCENT = new Color(0x4EA1FFFF);
+    public static final Color ACCENT_HOVER = new Color(0x69B0FFFF);
+    /** Background of selected rows: a muted accent wash, not a bright fill. */
+    public static final Color SELECTED_BG = new Color(0x2D435EFF);
+    public static final Color SUCCESS = new Color(0x65C59BFF);
+    public static final Color WARNING = new Color(0xE5B567FF);
+    public static final Color ERROR = new Color(0xE57878FF);
+    private static final Color SCROLL_KNOB = new Color(0x46536BFF);
+    private static final Color TOOLTIP_BG = new Color(0x1A2029F2);
+
+    // === Spacing tokens (px): 4 minimal, 8 tightly related, 12 compact inner,
+    // 16 main inner, 24 between sections. ===
+    public static final float SPACE_XS = 4f;
+    public static final float SPACE_S = 8f;
+    public static final float SPACE_M = 12f;
+    public static final float SPACE_L = 16f;
+    public static final float SPACE_XL = 24f;
+
+    // === Corner radius tokens: 4 small controls, 6 buttons and fields,
+    // 8 cards and panels. ===
+    public static final int RADIUS_S = 4;
+    public static final int RADIUS_M = 6;
+    public static final int RADIUS_L = 8;
+
+    /** Common height of single-row controls: fields and buttons. */
+    public static final float CONTROL_H = 32f;
 
     /** Preset equipment entries offered by the room editor as checkboxes. */
     public static final java.util.List<String> EQUIPMENT_PRESETS =
@@ -62,37 +85,66 @@ public final class UiTheme implements Disposable {
     /** Default ASCII charset of FreeTypeFontGenerator plus Russian glyphs and marks. */
     private static final String CHARACTERS = FreeTypeFontGenerator.DEFAULT_CHARS
         + "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
-        + "абвгдеёжзийклмнопрстуфхцчшщъыьэюя«»—–…№✓‹›";
+        + "абвгдеёжзийклмнопрстуфхцчшщъыьэюя«»—–…№✓‹›·×";
 
     private final Skin skin;
-    private final BitmapFont regularFont;
-    private final BitmapFont boldFont;
-    private final BitmapFont smallFont;
+    private final BitmapFont titleFont;      // 16 bold: window / panel headers
+    private final BitmapFont headingFont;    // 14 bold: section captions, tree categories
+    private final BitmapFont defaultFont;    // 14 regular: primary text
+    private final BitmapFont secondaryFont;  // 13 regular: secondary information
+    private final BitmapFont smallFont;      // 12 regular: captions, status, hints
+
     private final Drawable tooltipBackground;
-    private final Drawable chipBackground;
-    private final Drawable chipHover;
-    private final Drawable chipSelected;
+    private final Drawable popupBackground;
+    private final Drawable cardBackground;
+    private final Drawable rowHover;
+    private final Drawable rowSelected;
+    private final Drawable fieldBackground;
+    private final Drawable fieldBackgroundFocused;
     private final Drawable panelBackground;
+    private final Drawable menuBarBackground;
+    private final Drawable statusBarBackground;
+    private final Drawable leftPanelBackground;
+    private final Drawable rightPanelBackground;
 
     public UiTheme() {
-        regularFont = createFont("assets/fonts/PTSans-Regular.ttf", 15);
-        boldFont = createFont("assets/fonts/PTSans-Bold.ttf", 16);
+        titleFont = createFont("assets/fonts/PTSans-Bold.ttf", 16);
+        headingFont = createFont("assets/fonts/PTSans-Bold.ttf", 14);
+        defaultFont = createFont("assets/fonts/PTSans-Regular.ttf", 14);
+        secondaryFont = createFont("assets/fonts/PTSans-Regular.ttf", 13);
         smallFont = createFont("assets/fonts/PTSans-Regular.ttf", 12);
 
         skin = new Skin();
-        skin.add("regular", regularFont);
-        skin.add("bold", boldFont);
+        skin.add("title", titleFont);
+        skin.add("heading", headingFont);
+        skin.add("regular", defaultFont);
+        skin.add("secondary", secondaryFont);
         skin.add("small", smallFont);
 
         skin.add("white", new Texture(makeFlatPixmap(Color.WHITE)));
 
-        tooltipBackground = rounded(TOOLTIP_BG, 8);
+        tooltipBackground = roundedBordered(TOOLTIP_BG, BORDER, RADIUS_M);
         skin.add("tooltip_bg", tooltipBackground);
-        chipBackground = roundedPadded(CHIP_BG, 9, 8, 3);
-        chipHover = roundedPadded(CHIP_HOVER, 9, 8, 3);
-        chipSelected = roundedPadded(CHIP_SELECTED, 9, 8, 3);
-        // The chrome strips: square, opaque dark, full-bleed.
-        panelBackground = roundedPadded(PANEL_BG, 0, 0, 0);
+        popupBackground = roundedBordered(PANEL_BG, BORDER, RADIUS_M);
+        skin.add("popup_bg", popupBackground);
+        cardBackground = rounded(SURFACE, RADIUS_L);
+        skin.add("card_bg", cardBackground);
+        rowHover = roundedPadded(SURFACE_HOVER, RADIUS_S, SPACE_S, SPACE_XS);
+        skin.add("row_hover", rowHover);
+        rowSelected = roundedPadded(SELECTED_BG, RADIUS_S, SPACE_S, SPACE_XS);
+        skin.add("row_selected", rowSelected);
+        fieldBackground = roundedBordered(SURFACE, BORDER, RADIUS_M);
+        skin.add("field_bg", fieldBackground);
+        fieldBackgroundFocused = roundedBordered(SURFACE_HOVER, ACCENT, RADIUS_M);
+        skin.add("field_bg_focused", fieldBackgroundFocused);
+
+        // The chrome strips: opaque dark, square, with a hairline on the side
+        // facing the 3D work area.
+        panelBackground = flat(PANEL_BG);
+        menuBarBackground = edgePanel(PANEL_BG, false, false, false, true);
+        statusBarBackground = edgePanel(PANEL_BG, false, false, true, false);
+        leftPanelBackground = edgePanel(PANEL_BG, false, true, false, false);
+        rightPanelBackground = edgePanel(PANEL_BG, true, false, false, false);
 
         addStyles();
     }
@@ -101,29 +153,63 @@ public final class UiTheme implements Disposable {
         return skin;
     }
 
-    /** Dark translucent strip for the menu bar, toolbar and status bar. */
+    /** Plain opaque panel fill, no border. */
     public Drawable panelBackground() {
         return panelBackground;
     }
 
-    /** Rounded background used by the hover tooltip. */    public Drawable tooltipBackground() {
+    /** Menu bar strip: panel fill with a hairline at its bottom edge. */
+    public Drawable menuBarBackground() {
+        return menuBarBackground;
+    }
+
+    /** Status bar strip: panel fill with a hairline at its top edge. */
+    public Drawable statusBarBackground() {
+        return statusBarBackground;
+    }
+
+    /** Left docked panel: panel fill with a hairline at its right edge. */
+    public Drawable leftPanelBackground() {
+        return leftPanelBackground;
+    }
+
+    /** Right docked panel: panel fill with a hairline at its left edge. */
+    public Drawable rightPanelBackground() {
+        return rightPanelBackground;
+    }
+
+    /** Background of the context menu and the dropdown lists. */
+    public Drawable popupBackground() {
+        return popupBackground;
+    }
+
+    /** Rounded bordered background of the hover tooltip. */
+    public Drawable tooltipBackground() {
         return tooltipBackground;
     }
 
-
-    /** Floating chip under a regular text row. */
-    public Drawable chipBackground() {
-        return chipBackground;
+    /** Rounded surface of a compact information card (schedule lessons etc.). */
+    public Drawable cardBackground() {
+        return cardBackground;
     }
 
-    /** Floating chip under a hovered row (search results). */
-    public Drawable chipHover() {
-        return chipHover;
+    /** Rounded hover highlight of a tree / list row. */
+    public Drawable rowHover() {
+        return rowHover;
     }
 
-    /** Floating chip under the selected row. */
-    public Drawable chipSelected() {
-        return chipSelected;
+    /** Rounded highlight of the selected row. */
+    public Drawable rowSelected() {
+        return rowSelected;
+    }
+
+    /** Bordered rounded field background; the focused variant carries the accent outline. */
+    public Drawable fieldBackground() {
+        return fieldBackground;
+    }
+
+    public Drawable fieldBackgroundFocused() {
+        return fieldBackgroundFocused;
     }
 
     /** A plain 1x1 drawable tinted with the given color. */
@@ -137,125 +223,159 @@ public final class UiTheme implements Disposable {
      *  drawable, so adjacent items' highlights sit flush against each other.
      *  The patch must carry the padding before the drawable copies it: the
      *  drawable's own padding fields are never re-read from the patch. */
-    private Drawable flatPadded(Color color, int padX, int padY) {
+    private Drawable flatPadded(Color color, float padX, float padY) {
         Pixmap pixmap = makeFlatPixmap(color);
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
-        skin.add("flat_" + Integer.toHexString(color.toIntBits()) + "_" + padX + "_" + padY, texture);
+        skin.add("flat_" + Integer.toHexString(color.toIntBits()) + "_" + Math.round(padX) + "_" + Math.round(padY), texture);
         NinePatch patch = new NinePatch(texture, 0, 0, 0, 0);
-        patch.setPadding(padX, padX, padY, padY);
+        patch.setPadding(Math.round(padX), Math.round(padX), Math.round(padY), Math.round(padY));
         return new NinePatchDrawable(patch);
     }
 
     private void addStyles() {
-        Label.LabelStyle labelDefault = new Label.LabelStyle(regularFont, TEXT);
-        skin.add("default", labelDefault);
-        skin.add("title", new Label.LabelStyle(boldFont, TEXT));
-        skin.add("hint", new Label.LabelStyle(smallFont, TEXT_DIM));
-        skin.add("accent", new Label.LabelStyle(regularFont, ACCENT));
-        skin.add("error", new Label.LabelStyle(smallFont, new Color(0xE07A7AFF)));
+        // Label levels: title 16 bold → heading 14 bold → default 14 →
+        // secondary 13 → small 12.
+        skin.add("default", new Label.LabelStyle(defaultFont, TEXT));
+        skin.add("title", new Label.LabelStyle(titleFont, TEXT));
+        skin.add("heading", new Label.LabelStyle(headingFont, TEXT));
+        skin.add("secondary", new Label.LabelStyle(secondaryFont, TEXT_SECONDARY));
+        // Tree subcategories: the secondary size, but the full text color.
+        skin.add("tree-sub", new Label.LabelStyle(secondaryFont, TEXT));
+        skin.add("hint", new Label.LabelStyle(smallFont, TEXT_SECONDARY));
+        skin.add("caption", new Label.LabelStyle(smallFont, TEXT_DISABLED));
+        skin.add("accent", new Label.LabelStyle(defaultFont, ACCENT));
+        skin.add("error", new Label.LabelStyle(smallFont, ERROR));
 
+        // Text fields: bordered rounded surface; the focus state swaps the
+        // outline to the accent color. The transparent padded variant backs
+        // the search field, whose outline lives on the surrounding composite.
         TextField.TextFieldStyle field = new TextField.TextFieldStyle();
-        field.font = regularFont;
+        field.font = defaultFont;
         field.fontColor = TEXT;
         field.messageFont = smallFont;
-        field.messageFontColor = TEXT_DIM;
-        // The rounded background carries the horizontal padding, so the typed
-        // text and the placeholder sit away from the field's left edge.
-        field.background = roundedPadded(FIELD_BG, 8, 10, 8);
-        field.focusedBackground = roundedPadded(FIELD_BG_FOCUSED, 8, 10, 8);
+        field.messageFontColor = TEXT_DISABLED;
+        field.background = roundedBorderedPadded(SURFACE, BORDER, RADIUS_M, SPACE_M + 2, SPACE_S);
+        field.focusedBackground = roundedBorderedPadded(SURFACE_HOVER, ACCENT, RADIUS_M, SPACE_M + 2, SPACE_S);
         field.cursor = flat(TEXT);
         field.selection = flat(new Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.35f));
         skin.add("default", field);
         skin.add("field", field);
 
-        // Buttons: rounded field background, accent when pressed/checked.
+        TextField.TextFieldStyle bare = new TextField.TextFieldStyle(field);
+        bare.background = flatPadded(new Color(0, 0, 0, 0), SPACE_M + 2, SPACE_S);
+        bare.focusedBackground = bare.background;
+        skin.add("bare", bare);
+
+        // Command buttons: bordered surface, hover lightens, press darkens into
+        // the selected wash. checked stays null: Button toggles its checked
+        // flag on every click, and a checked drawable would make command
+        // buttons stick in the highlight until clicked twice.
         TextButton.TextButtonStyle button = new TextButton.TextButtonStyle();
-        button.font = regularFont;
+        button.font = defaultFont;
         button.fontColor = TEXT;
-        button.up = roundedPadded(FIELD_BG, 6, 10, 6);
-        button.over = roundedPadded(FIELD_BG_FOCUSED, 6, 10, 6);
-        button.down = roundedPadded(CHIP_SELECTED, 6, 10, 6);
-        button.checked = roundedPadded(CHIP_SELECTED, 6, 10, 6);
+        button.up = roundedBorderedPadded(SURFACE, BORDER, RADIUS_M, SPACE_M, SPACE_S);
+        button.over = roundedBorderedPadded(SURFACE_HOVER, BORDER, RADIUS_M, SPACE_M, SPACE_S);
+        button.down = roundedPadded(SELECTED_BG, RADIUS_M, SPACE_M, SPACE_S);
         skin.add("default", button);
 
-        // Top-bar controls and popup rows: plain text with a flat highlight
-        // that extends past the text by a fixed padding. Every state carries
-        // the same padding, so the metrics never change on hover, and adjacent
-        // highlights sit flush against each other — the classic menu bar look.
-        // checked stays null: Button toggles its checked flag on every click,
-        // and a checked drawable would make command buttons stick in the
-        // highlight until clicked twice.
+        // Primary action of a dialog (e.g. «Сохранить»): the accent fill.
+        TextButton.TextButtonStyle primary = new TextButton.TextButtonStyle();
+        primary.font = defaultFont;
+        primary.fontColor = TEXT;
+        primary.up = roundedPadded(ACCENT, RADIUS_M, SPACE_M, SPACE_S);
+        primary.over = roundedPadded(ACCENT_HOVER, RADIUS_M, SPACE_M, SPACE_S);
+        primary.down = roundedPadded(SELECTED_BG, RADIUS_M, SPACE_M, SPACE_S);
+        skin.add("primary", primary);
+
+        // Compact in-panel action («Обновить», «+ атрибут»): small text, low key.
+        TextButton.TextButtonStyle compact = new TextButton.TextButtonStyle();
+        compact.font = smallFont;
+        compact.fontColor = TEXT_SECONDARY;
+        compact.up = roundedPadded(SURFACE, RADIUS_S, SPACE_S, SPACE_XS);
+        compact.over = roundedPadded(SURFACE_HOVER, RADIUS_S, SPACE_S, SPACE_XS);
+        compact.down = roundedPadded(SELECTED_BG, RADIUS_S, SPACE_S, SPACE_XS);
+        skin.add("compact", compact);
+
+        // Quiet footer link («В браузере»): transparent until hovered.
+        TextButton.TextButtonStyle link = new TextButton.TextButtonStyle();
+        link.font = smallFont;
+        link.fontColor = TEXT_SECONDARY;
+        link.up = flatPadded(new Color(0, 0, 0, 0), SPACE_S, SPACE_XS);
+        link.over = flatPadded(SURFACE_HOVER, SPACE_S, SPACE_XS);
+        link.down = flatPadded(SELECTED_BG, SPACE_S, SPACE_XS);
+        skin.add("link", link);
+
+        // Top-bar controls and popup rows: plain text with a flat neutral
+        // highlight that extends past the text by a fixed padding. Every state
+        // carries the same padding, so the metrics never change on hover, and
+        // adjacent highlights sit flush against each other — the classic menu
+        // bar look.
         int menuPadX = 10;
         int menuPadY = 4;
         Drawable menuUp = flatPadded(new Color(0, 0, 0, 0), menuPadX, menuPadY);
-        Drawable menuHover = flatPadded(ROW_HOVER, menuPadX, menuPadY);
+        Drawable menuHover = flatPadded(SURFACE_HOVER, menuPadX, menuPadY);
 
         TextButton.TextButtonStyle menuItem = new TextButton.TextButtonStyle();
-        menuItem.font = regularFont;
+        menuItem.font = defaultFont;
         menuItem.fontColor = TEXT;
         menuItem.up = menuUp;
         menuItem.over = menuHover;
         menuItem.down = menuHover;
         skin.add("menu-item", menuItem);
 
-        TextButton.TextButtonStyle topBar = new TextButton.TextButtonStyle();
-        topBar.font = regularFont;
-        topBar.fontColor = TEXT;
-        topBar.up = menuUp;
-        topBar.over = menuHover;
-        topBar.down = menuHover;
-        skin.add("top-bar", topBar);
-
         Button.ButtonStyle panelToggle = new Button.ButtonStyle();
-        panelToggle.up = rounded(FIELD_BG, 8);
-        panelToggle.over = rounded(FIELD_BG_FOCUSED, 8);
-        panelToggle.down = rounded(CHIP_SELECTED, 8);
+        panelToggle.up = rounded(SURFACE, RADIUS_M);
+        panelToggle.over = rounded(SURFACE_HOVER, RADIUS_M);
+        panelToggle.down = rounded(SELECTED_BG, RADIUS_M);
         skin.add("panel-toggle", panelToggle);
         skin.add("panel-chevron-left", panelChevron(false), Drawable.class);
         skin.add("panel-chevron-right", panelChevron(true), Drawable.class);
+        skin.add("icon-search", searchIcon(), Drawable.class);
 
         CheckBox.CheckBoxStyle checkBox = new CheckBox.CheckBoxStyle();
-        checkBox.font = regularFont;
+        checkBox.font = defaultFont;
         checkBox.fontColor = TEXT;
         checkBox.checkboxOff = checkBoxPixmap(false);
         checkBox.checkboxOn = checkBoxPixmap(true);
         skin.add("default", checkBox);
 
         // The scroll style is shared: panes and the select box dropdown use it.
+        // Only a quiet knob is drawn; no track, no arrows.
         ScrollPane.ScrollPaneStyle scroll = new ScrollPane.ScrollPaneStyle();
-        scroll.vScroll = flat(SCROLL_TRACK);
-        scroll.vScrollKnob = flat(SCROLL_KNOB);
-        scroll.hScroll = flat(SCROLL_TRACK);
-        scroll.hScrollKnob = flat(SCROLL_KNOB);
+        scroll.vScrollKnob = flatMinSize(SCROLL_KNOB, 6);
+        scroll.hScrollKnob = flatMinSize(SCROLL_KNOB, 6);
         skin.add("default", scroll);
 
-        List.ListStyle list = new List.ListStyle(regularFont, TEXT, TEXT, null);
-        list.selection = roundedPadded(CHIP_SELECTED, 4, 6, 2);
-        list.background = rounded(FIELD_BG, 8);
+        List.ListStyle list = new List.ListStyle(defaultFont, TEXT, TEXT, null);
+        list.selection = roundedPadded(SELECTED_BG, RADIUS_S, SPACE_S, SPACE_XS);
+        list.background = popupBackground;
         skin.add("default", list);
 
         SelectBox.SelectBoxStyle selectBox = new SelectBox.SelectBoxStyle();
-        selectBox.font = regularFont;
+        selectBox.font = defaultFont;
         selectBox.fontColor = TEXT;
-        selectBox.background = roundedPadded(FIELD_BG, 8, 10, 8);
+        selectBox.background = fieldBackground;
+        selectBox.backgroundOver = fieldBackgroundFocused;
+        selectBox.backgroundOpen = fieldBackgroundFocused;
         selectBox.scrollStyle = scroll;
         selectBox.listStyle = list;
         skin.add("default", selectBox);
 
         Window.WindowStyle window = new Window.WindowStyle();
-        window.titleFont = boldFont;
+        window.titleFont = titleFont;
         window.titleFontColor = TEXT;
-        NinePatchDrawable windowBackground = rounded(PANEL_BG, 10);
-        windowBackground.getPatch().setPadding(6, 26, 6, 6);
+        NinePatchDrawable windowBackground = roundedBordered(PANEL_BG, BORDER, RADIUS_L);
+        // The title sits in the top padding band of the window background.
+        windowBackground.getPatch().setPadding(SPACE_L, SPACE_L, 32, SPACE_L);
         window.background = windowBackground;
         skin.add("default", window);
 
         Tree.TreeStyle tree = new Tree.TreeStyle();
-        // Collapsed / expanded subtrees show a small triangular arrow instead of
-        // the plus / minus squares.
-        tree.plus = arrowIcon(false);
-        tree.minus = arrowIcon(true);
+        // Collapsed / expanded subtrees show a small chevron instead of the
+        // plus / minus squares.
+        tree.plus = arrowChevron(false);
+        tree.minus = arrowChevron(true);
         // Row highlighting is done by the per-row chips; the full-width
         // selection bar stays off.
         tree.selection = null;
@@ -299,12 +419,7 @@ public final class UiTheme implements Disposable {
         Pixmap pixmap = new Pixmap(size, size, Pixmap.Format.RGBA8888);
         pixmap.setBlending(Pixmap.Blending.None);
         pixmap.setColor(color);
-        pixmap.fillRectangle(radius, 0, size - 2 * radius, size);
-        pixmap.fillRectangle(0, radius, size, size - 2 * radius);
-        pixmap.fillCircle(radius, radius, radius);
-        pixmap.fillCircle(size - radius - 1, radius, radius);
-        pixmap.fillCircle(radius, size - radius - 1, radius);
-        pixmap.fillCircle(size - radius - 1, size - radius - 1, radius);
+        fillRounded(pixmap, 0, 0, size, size, radius);
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
         texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
@@ -312,38 +427,129 @@ public final class UiTheme implements Disposable {
         return new NinePatchDrawable(new NinePatch(texture, radius, radius, radius, radius));
     }
 
+    /** A rounded surface with a 1px outline: fields, popups, the window. */
+    private NinePatchDrawable roundedBordered(Color fill, Color border, int radius) {
+        return roundedBordered(fill, border, radius, radius);
+    }
+
+    private NinePatchDrawable roundedBordered(Color fill, Color border, int radius, int borderInset) {
+        int size = radius * 2 + 2;
+        Pixmap pixmap = new Pixmap(size, size, Pixmap.Format.RGBA8888);
+        pixmap.setBlending(Pixmap.Blending.None);
+        pixmap.setColor(border);
+        fillRounded(pixmap, 0, 0, size, size, radius);
+        pixmap.setColor(fill);
+        fillRounded(pixmap, borderInset, borderInset, size - 2 * borderInset, size - 2 * borderInset,
+            Math.max(radius - borderInset, 0));
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        skin.add("rounded_bordered_" + Integer.toHexString(fill.toIntBits()) + "_"
+            + Integer.toHexString(border.toIntBits()) + "_" + radius, texture);
+        return new NinePatchDrawable(new NinePatch(texture, radius, radius, radius, radius));
+    }
+
+    /** Fills an antialias-free rounded rectangle (two rects + four circles). */
+    private static void fillRounded(Pixmap pixmap, int x, int y, int width, int height, int radius) {
+        if (radius <= 0) {
+            pixmap.fillRectangle(x, y, width, height);
+            return;
+        }
+        int r = Math.min(radius, Math.min(width, height) / 2);
+        pixmap.fillRectangle(x + r, y, width - 2 * r, height);
+        pixmap.fillRectangle(x, y + r, width, height - 2 * r);
+        pixmap.fillCircle(x + r, y + r, r);
+        pixmap.fillCircle(x + width - r - 1, y + r, r);
+        pixmap.fillCircle(x + r, y + height - r - 1, r);
+        pixmap.fillCircle(x + width - r - 1, y + height - r - 1, r);
+    }
+
     /** A rounded background whose nine patch padding insets the content. */
-    private NinePatchDrawable roundedPadded(Color color, int radius, int padX, int padY) {
+    private NinePatchDrawable roundedPadded(Color color, int radius, float padX, float padY) {
         NinePatchDrawable drawable = rounded(color, radius);
-        drawable.getPatch().setPadding(padX, padY, padY, padX);
+        drawable.getPatch().setPadding(Math.round(padX), Math.round(padX), Math.round(padY), Math.round(padY));
+        return drawable;
+    }
+
+    private NinePatchDrawable roundedBorderedPadded(Color fill, Color border, int radius, float padX, float padY) {
+        NinePatchDrawable drawable = roundedBordered(fill, border, radius);
+        drawable.getPatch().setPadding(Math.round(padX), Math.round(padX), Math.round(padY), Math.round(padY));
+        return drawable;
+    }
+
+    /**
+     * Opaque panel fill with a hairline drawn along one side. The line lives
+     * in the outermost pixel column / row, so the nine patch keeps it exactly
+     * one pixel wide at any widget size.
+     */
+    private NinePatchDrawable edgePanel(Color fill, boolean left, boolean right, boolean top, boolean bottom) {
+        int size = 8;
+        Pixmap pixmap = new Pixmap(size, size, Pixmap.Format.RGBA8888);
+        pixmap.setBlending(Pixmap.Blending.None);
+        pixmap.setColor(fill);
+        pixmap.fill();
+        pixmap.setColor(BORDER);
+        if (left) pixmap.fillRectangle(0, 0, 1, size);
+        if (right) pixmap.fillRectangle(size - 1, 0, 1, size);
+        if (top) pixmap.fillRectangle(0, 0, size, 1);
+        if (bottom) pixmap.fillRectangle(0, size - 1, size, 1);
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        skin.add("edge_" + Integer.toHexString(fill.toIntBits())
+            + (left ? "L" : "") + (right ? "R" : "") + (top ? "T" : "") + (bottom ? "B" : ""), texture);
+        return new NinePatchDrawable(new NinePatch(texture, 2, 2, 2, 2));
+    }
+
+    /** A flat tint with an explicit minimum size: the scroll knob width. */
+    private Drawable flatMinSize(Color color, float min) {
+        Pixmap pixmap = new Pixmap(Math.round(min), Math.round(min), Pixmap.Format.RGBA8888);
+        pixmap.setBlending(Pixmap.Blending.None);
+        pixmap.setColor(color);
+        pixmap.fill();
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        skin.add("flat_min_" + Integer.toHexString(color.toIntBits()) + "_" + Math.round(min), texture);
+        TextureRegionDrawable drawable = new TextureRegionDrawable(new TextureRegion(texture));
+        drawable.setMinWidth(min);
+        drawable.setMinHeight(min);
         return drawable;
     }
 
     /**
      * Small triangular expansion marker of the category tree: pointing right
-     * while the subtree is collapsed and down once it is expanded.
+     * while the subtree is collapsed and down once it is expanded. Drawn
+     * supersampled for a smooth stroke.
      */
-    private Drawable arrowIcon(boolean expanded) {
-        Pixmap pixmap = new Pixmap(10, 10, Pixmap.Format.RGBA8888);
-        pixmap.setColor(TEXT_DIM);
-        if (expanded) {
-            pixmap.fillTriangle(2, 3, 8, 3, 5, 8); // down
-        } else {
-            pixmap.fillTriangle(3, 2, 3, 8, 8, 5); // right
-        }
+    private Drawable arrowChevron(boolean expanded) {
+        int scale = 4;
+        int size = 10;
+        Pixmap pixmap = new Pixmap(size * scale, size * scale, Pixmap.Format.RGBA8888);
+        pixmap.setBlending(Pixmap.Blending.None);
+        pixmap.setColor(TEXT_SECONDARY);
+        // Two straight strokes meeting at the middle: ">" collapsed, "v" expanded.
+        float x1 = expanded ? 2.5f : 3.5f, y1 = 2.5f;
+        float x2 = expanded ? 5f : 7.5f, y2 = 5f;
+        float x3 = expanded ? 7.5f : 3.5f, y3 = 7.5f;
+        stroke(pixmap, scale, x1, y1, x2, y2, 0.9f);
+        stroke(pixmap, scale, x2, y2, x3, y3, 0.9f);
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
         texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        skin.add("tree_arrow_" + (expanded ? "down" : "right"), texture);
-        return new TextureRegionDrawable(new TextureRegion(texture));
+        skin.add("tree_chevron_" + (expanded ? "down" : "right"), texture);
+        TextureRegionDrawable drawable = new TextureRegionDrawable(new TextureRegion(texture));
+        drawable.setMinWidth(size);
+        drawable.setMinHeight(size);
+        return drawable;
     }
 
-    /** Antialiased chevron drawn independently of the UI font. */
+    /** Antialiased chevron of the panel collapse buttons, drawn independently
+     *  of the UI font. */
     private Drawable panelChevron(boolean pointsRight) {
         int scale = 4;
         Pixmap pixmap = new Pixmap(12 * scale, 12 * scale, Pixmap.Format.RGBA8888);
         pixmap.setBlending(Pixmap.Blending.None);
-        pixmap.setColor(TEXT);
+        pixmap.setColor(TEXT_SECONDARY);
         for (int y = 0; y < 12 * scale; y++) {
             for (int x = 0; x < 12 * scale; x++) {
                 float px = (x + 0.5f) / scale;
@@ -365,31 +571,111 @@ public final class UiTheme implements Disposable {
         return drawable;
     }
 
+    /** Small magnifier of the search field: a ring plus a diagonal handle. */
+    private Drawable searchIcon() {
+        int scale = 4;
+        int size = 14;
+        Pixmap pixmap = new Pixmap(size * scale, size * scale, Pixmap.Format.RGBA8888);
+        pixmap.setBlending(Pixmap.Blending.None);
+        pixmap.setColor(TEXT_SECONDARY);
+        float cx = 6f, cy = 6f, r = 3.6f;
+        for (int y = 0; y < size * scale; y++) {
+            for (int x = 0; x < size * scale; x++) {
+                float px = (x + 0.5f) / scale;
+                float py = (y + 0.5f) / scale;
+                float dist = (float) Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+                if (Math.abs(dist - r) <= 0.75f) {
+                    pixmap.drawPixel(x, y);
+                    continue;
+                }
+                if (strokeDistance(px, py, 8.8f, 8.8f, 12.4f, 12.4f) <= 0.75f) {
+                    pixmap.drawPixel(x, y);
+                }
+            }
+        }
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        skin.add("icon_search", texture);
+        TextureRegionDrawable drawable = new TextureRegionDrawable(new TextureRegion(texture));
+        drawable.setMinWidth(size);
+        drawable.setMinHeight(size);
+        return drawable;
+    }
+
+    /** Draws a straight stroke by walking the pixels near the segment. */
+    private static void stroke(Pixmap pixmap, int scale, float x1, float y1, float x2, float y2, float width) {
+        for (int y = 0; y < pixmap.getHeight(); y++) {
+            for (int x = 0; x < pixmap.getWidth(); x++) {
+                float px = (x + 0.5f) / scale;
+                float py = (y + 0.5f) / scale;
+                if (strokeDistance(px, py, x1, y1, x2, y2) <= width) {
+                    pixmap.drawPixel(x, y);
+                }
+            }
+        }
+    }
+
+    /** Distance from a point to the segment (x1,y1)-(x2,y2). */
+    private static float strokeDistance(float px, float py, float x1, float y1, float x2, float y2) {
+        float dx = x2 - x1, dy = y2 - y1;
+        float lengthSq = dx * dx + dy * dy;
+        float t = lengthSq == 0 ? 0
+            : ((px - x1) * dx + (py - y1) * dy) / lengthSq;
+        t = Math.max(0f, Math.min(1f, t));
+        float nearX = x1 + t * dx, nearY = y1 + t * dy;
+        return (float) Math.sqrt((px - nearX) * (px - nearX) + (py - nearY) * (py - nearY));
+    }
+
     /** Square checkbox drawable; the checked variant carries a white tick. */
     private Drawable checkBoxPixmap(boolean checked) {
-        Pixmap pixmap = new Pixmap(16, 16, Pixmap.Format.RGBA8888);
+        int scale = 4;
+        int size = 16;
+        Pixmap pixmap = new Pixmap(size * scale, size * scale, Pixmap.Format.RGBA8888);
         pixmap.setBlending(Pixmap.Blending.None);
-        pixmap.setColor(checked ? ACCENT : FIELD_BG);
-        pixmap.fillRectangle(2, 2, 12, 12);
-        pixmap.setColor(TEXT_DIM);
-        if (!checked) {
-            // A thin border around the empty box.
-            pixmap.fillRectangle(2, 2, 12, 1);
-            pixmap.fillRectangle(2, 13, 12, 1);
-            pixmap.fillRectangle(2, 2, 1, 12);
-            pixmap.fillRectangle(13, 2, 1, 12);
-        } else {
+        pixmap.setColor(checked ? ACCENT : SURFACE);
+        fillRounded(pixmap, 0, 0, size * scale, size * scale, 4 * scale);
+        pixmap.setColor(checked ? ACCENT : BORDER);
+        strokeRoundedOutline(pixmap, scale, size, 4);
+        if (checked) {
             pixmap.setColor(TEXT);
-            pixmap.fillRectangle(4, 7, 2, 3);
-            pixmap.fillRectangle(6, 8, 2, 3);
-            pixmap.fillRectangle(8, 6, 2, 2);
-            pixmap.fillRectangle(10, 4, 2, 3);
+            stroke(pixmap, scale, 4, 8.2f, 6.8f, 11f, 0.9f);
+            stroke(pixmap, scale, 6.8f, 11f, 11.6f, 5f, 0.9f);
         }
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
         texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
         skin.add("checkbox_" + (checked ? "on" : "off"), texture);
-        return new TextureRegionDrawable(new TextureRegion(texture));
+        TextureRegionDrawable drawable = new TextureRegionDrawable(new TextureRegion(texture));
+        drawable.setMinWidth(size);
+        drawable.setMinHeight(size);
+        return drawable;
+    }
+
+    /** 1px rounded outline for the supersampled checkbox: an outer ring of the
+     *  border color with the interior already filled. */
+    private static void strokeRoundedOutline(Pixmap pixmap, int scale, int size, int radius) {
+        int full = size * scale;
+        for (int y = 0; y < full; y++) {
+            for (int x = 0; x < full; x++) {
+                float px = (x + 0.5f) / scale;
+                float py = (y + 0.5f) / scale;
+                float edge = roundedEdgeDistance(px, py, size, size, radius);
+                if (Math.abs(edge) <= 0.75f / scale) {
+                    pixmap.drawPixel(x, y);
+                }
+            }
+        }
+    }
+
+    /**
+     * Signed distance to the boundary of a rounded rectangle: negative inside.
+     * A cheap box-minus-corner approximation is enough for a 1px outline.
+     */
+    private static float roundedEdgeDistance(float px, float py, float width, float height, float radius) {
+        float cx = Math.max(radius, Math.min(width - radius, px));
+        float cy = Math.max(radius, Math.min(height - radius, py));
+        return (float) Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy)) - radius;
     }
 
     @Override

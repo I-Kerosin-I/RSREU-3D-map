@@ -8,10 +8,10 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import java.util.List;
 
 /**
- * The classic top chrome of the window: a menu bar (Файл / Режим / Вид). The
- * manifest is saved through Файл → «Сохранить манифест», the editor mode is
- * switched only through the Режим menu. The dropdowns are the shared
- * {@link ContextMenu} popup.
+ * The classic top chrome of the window: a menu bar (Файл / Режим / Вид) with
+ * the application caption on the right. The manifest is saved through
+ * Файл → «Сохранить манифест», the editor mode is switched only through the
+ * Режим menu. The dropdowns are the shared {@link ContextMenu} popup.
  */
 public final class TopBar {
 
@@ -46,7 +46,7 @@ public final class TopBar {
         this.menu = menu;
 
         table = new Table();
-        table.setBackground(theme.panelBackground());
+        table.setBackground(theme.menuBarBackground());
         table.setTouchable(com.badlogic.gdx.scenes.scene2d.Touchable.enabled);
         // Swallow presses on the strips: the classic chrome must not drag the
         // camera behind it.
@@ -70,6 +70,9 @@ public final class TopBar {
         menuRow.add(fileButton).left().height(28f);
         menuRow.add(modeButton).left().height(28f);
         menuRow.add(viewButton).left().height(28f);
+        menuRow.add().growX();
+        menuRow.add(new com.badlogic.gdx.scenes.scene2d.ui.Label("RSREU 3D Map", theme.skin(), "caption"))
+            .right().padRight(UiTheme.SPACE_L);
         menuRow.left();
 
         table.add(menuRow).growX().pad(4, 4, 4, 4);

@@ -34,10 +34,10 @@ public final class RoomTooltip {
 
         container = new Table();
         container.setBackground(theme.tooltipBackground());
-        container.pad(10f, 12f, 10f, 12f);
+        container.pad(UiTheme.SPACE_S, UiTheme.SPACE_M, UiTheme.SPACE_S, UiTheme.SPACE_M);
 
-        titleLabel = new Label("", theme.skin(), "title");
-        descriptionLabel = new Label("", theme.skin(), "hint");
+        titleLabel = new Label("", theme.skin(), "heading");
+        descriptionLabel = new Label("", theme.skin(), "secondary");
         descriptionLabel.setWrap(true);
 
         container.add(titleLabel).left().row();
